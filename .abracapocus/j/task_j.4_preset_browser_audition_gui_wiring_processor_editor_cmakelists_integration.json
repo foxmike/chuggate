@@ -14,7 +14,7 @@
     "CMakeLists.txt lists Profiles.cpp and TuningProfiles.cpp on the plugin and/or test targets",
     "No file outside the task's allowed_write_paths is created or modified"
   ],
-  "selected_backend": "antigravity_cli",
+  "selected_backend": "pi_cli",
   "verification_profile": "focused",
   "allowed_write_paths": [
     "Source/PluginProcessor.cpp",
@@ -57,5 +57,6 @@
     "j.3"
   ],
   "task_timeout_seconds": 1200,
-  "verification_commands": []
+  "verification_commands": [],
+  "model": "openrouter/minimax/minimax-m3"
 }

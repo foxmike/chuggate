@@ -16,7 +16,7 @@
     "CMakeLists.txt registers tests/DetectorTests.cpp on the test target",
     "No file outside the task's allowed_write_paths is created or modified"
   ],
-  "selected_backend": "antigravity_cli",
+  "selected_backend": "pi_cli",
   "verification_profile": "focused",
   "allowed_write_paths": [
     "Source/DSP/DetectorEngine.h",
@@ -62,5 +62,6 @@
     "b.2"
   ],
   "task_timeout_seconds": 1200,
-  "verification_commands": []
+  "verification_commands": [],
+  "model": "openrouter/minimax/minimax-m3"
 }

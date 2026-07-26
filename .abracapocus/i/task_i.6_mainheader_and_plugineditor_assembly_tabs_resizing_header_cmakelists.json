@@ -13,7 +13,7 @@
     "CMakeLists.txt lists ChugLookAndFeel.cpp, PerformanceTimeline.cpp, StateIndicator.cpp, PerformPage.cpp, ShapePage.cpp, DetectPage.cpp, AlignPage.cpp, DiagnosePage.cpp, MainHeader.cpp, and PluginEditor.cpp for the plugin target",
     "No file outside the task's allowed_write_paths is created or modified"
   ],
-  "selected_backend": "antigravity_cli",
+  "selected_backend": "pi_cli",
   "verification_profile": "focused",
   "allowed_write_paths": [
     "Source/GUI/MainHeader.h",
@@ -58,5 +58,6 @@
     "i.5"
   ],
   "task_timeout_seconds": 900,
-  "verification_commands": []
+  "verification_commands": [],
+  "model": "openrouter/minimax/minimax-m3"
 }

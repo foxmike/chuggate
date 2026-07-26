@@ -14,7 +14,7 @@
     "CMakeLists.txt includes StateManager.cpp in plugin/test targets if required to link",
     "No file outside the task's allowed_write_paths is created or modified"
   ],
-  "selected_backend": "antigravity_cli",
+  "selected_backend": "pi_cli",
   "verification_profile": "focused",
   "allowed_write_paths": [
     "Source/StateManager.h",
@@ -58,5 +58,6 @@
     "a.2"
   ],
   "task_timeout_seconds": 1200,
-  "verification_commands": []
+  "verification_commands": [],
+  "model": "openrouter/minimax/minimax-m3"
 }

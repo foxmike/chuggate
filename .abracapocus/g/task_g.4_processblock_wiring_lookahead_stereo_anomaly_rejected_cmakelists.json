@@ -16,7 +16,7 @@
     "No heap allocation introduced on the audio path after prepareToPlay",
     "No file outside the task's allowed_write_paths is created or modified"
   ],
-  "selected_backend": "antigravity_cli",
+  "selected_backend": "pi_cli",
   "verification_profile": "focused",
   "allowed_write_paths": [
     "Source/PluginProcessor.h",
@@ -66,5 +66,6 @@
     "g.3"
   ],
   "task_timeout_seconds": 1200,
-  "verification_commands": []
+  "verification_commands": [],
+  "model": "openrouter/minimax/minimax-m3"
 }

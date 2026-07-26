@@ -13,7 +13,7 @@
     "ShapePage exposes topology/crossover/per-band and Hiss Curtain controls bound to APVTS ParameterIDs",
     "No file outside the task's allowed_write_paths is created or modified"
   ],
-  "selected_backend": "antigravity_cli",
+  "selected_backend": "pi_cli",
   "verification_profile": "focused",
   "allowed_write_paths": [
     "Source/GUI/PerformPage.h",
@@ -55,5 +55,6 @@
     "i.1"
   ],
   "task_timeout_seconds": 900,
-  "verification_commands": []
+  "verification_commands": [],
+  "model": "openrouter/minimax/minimax-m3"
 }
