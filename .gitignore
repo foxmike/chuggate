@@ -1,0 +1,55 @@
+# CMake and CLion build output
+/build/
+/build-*/
+/cmake-build-*/
+/Builds/
+/out/
+
+# IDE state
+/.idea/
+/.vscode/
+*.user
+*.user.*
+*.suo
+*.opensdf
+*.sdf
+
+# Compiled output
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.dylib
+*.exe
+*.vst3
+*.component
+*.app
+
+# Generated CMake files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+Makefile
+.ninja_deps
+.ninja_log
+build.ninja
+rules.ninja
+
+# Abracapocus runtime data
+/.abracapocus/state/
+/.abracapocus/logs/
+/.abracapocus/reports/
+/.abracapocus/cache/
+/.abracapocus/tmp/
+/.abracapocus/runs/
+/.abracapocus/**/*.db
+/.abracapocus/**/*.sqlite
+/.abracapocus/**/*.sqlite3
+
+# Operating-system files
+.DS_Store
+Thumbs.db
+*~
