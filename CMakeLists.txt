@@ -63,6 +63,10 @@ target_sources(ChugGate
         Source/DSP/CrossoverSplitter.cpp
         Source/DSP/MultibandGate.cpp
         Source/DSP/HissCurtain.cpp
+        Source/DSP/LookaheadDelay.cpp
+        Source/DSP/StereoLinker.cpp
+        Source/DSP/AnomalyGuard.cpp
+        Source/DSP/RejectedSignalRouter.cpp
 )
 
 target_compile_definitions(ChugGate
@@ -248,6 +252,52 @@ else()
             Source/DSP/HissCurtain.cpp
     )
 endif()
+
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/LookaheadTests.cpp")
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/tests/LookaheadTests.cpp"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests"
+        COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_BINARY_DIR}/tests/LookaheadTests.cpp"
+        COMMENT "Generating stub LookaheadTests.cpp"
+    )
+    target_sources(ChugGateTests
+        PRIVATE
+            "${CMAKE_CURRENT_BINARY_DIR}/tests/LookaheadTests.cpp"
+            Source/DSP/LookaheadDelay.cpp
+    )
+else()
+    target_sources(ChugGateTests
+        PRIVATE
+            tests/LookaheadTests.cpp
+            Source/DSP/LookaheadDelay.cpp
+    )
+endif()
+
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/StereoTests.cpp")
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/tests/StereoTests.cpp"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests"
+        COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_BINARY_DIR}/tests/StereoTests.cpp"
+        COMMENT "Generating stub StereoTests.cpp"
+    )
+    target_sources(ChugGateTests
+        PRIVATE
+            "${CMAKE_CURRENT_BINARY_DIR}/tests/StereoTests.cpp"
+            Source/DSP/StereoLinker.cpp
+    )
+else()
+    target_sources(ChugGateTests
+        PRIVATE
+            tests/StereoTests.cpp
+            Source/DSP/StereoLinker.cpp
+    )
+endif()
+
+target_sources(ChugGateTests
+    PRIVATE
+        Source/DSP/AnomalyGuard.cpp
+        Source/DSP/RejectedSignalRouter.cpp
+)
 
 target_compile_definitions(ChugGateTests
     PRIVATE

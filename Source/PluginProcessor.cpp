@@ -353,6 +353,12 @@ ChugGateAudioProcessor::ChugGateAudioProcessor()
     params.hissCurtainMaxFreq = apvts.getRawParameterValue(ChugGate::ParameterIDs::HissCurtain::maxFreq);
     params.hissCurtainDepth = apvts.getRawParameterValue(ChugGate::ParameterIDs::HissCurtain::depth);
 
+    // Phase G parameter bindings
+    params.linkMode = apvts.getRawParameterValue(ChugGate::ParameterIDs::Stereo::linkMode);
+    params.linkAmount = apvts.getRawParameterValue(ChugGate::ParameterIDs::Stereo::linkAmount);
+    params.rejectedMode = apvts.getRawParameterValue(ChugGate::ParameterIDs::Audition::rejectedMode);
+    params.stateFilterMode = apvts.getRawParameterValue(ChugGate::ParameterIDs::Audition::stateFilterMode);
+
     // Band Low
     params.bandLow.floor = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandLow.floor);
     params.bandLow.thresholdOffset = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandLow.thresholdOffset);
@@ -386,12 +392,30 @@ ChugGateAudioProcessor::ChugGateAudioProcessor()
 
 void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
                                            int samplesPerBlock) {
-  monoKeyBuffer.setSize(1, samplesPerBlock);
-  smoothedGainBuffer.setSize(1, samplesPerBlock);
-  monoMainBuffer.setSize(1, samplesPerBlock);
-
   const int numMainChannels = getMainBusNumInputChannels();
   const int numSidechainChannels = getBusCount(true) > 1 ? getBus(true, 1)->getNumberOfChannels() : 0;
+
+  monoKeyBuffer.setSize(1, samplesPerBlock);
+  smoothedGainBuffer.setSize(2, samplesPerBlock);
+  monoMainBuffer.setSize(1, samplesPerBlock);
+
+  // Phase G buffer allocations
+  monoSidechainBuffer.setSize(1, samplesPerBlock);
+  dryMainCopyBuffer.setSize(numMainChannels, samplesPerBlock);
+  monoWetBuffer.setSize(1, samplesPerBlock);
+  hissCurtainRejectBuffer.setSize(1, samplesPerBlock);
+  auditionOutputBuffer.setSize(1, samplesPerBlock);
+
+  wetBandBuffer0.setSize(numMainChannels, samplesPerBlock);
+  wetBandBuffer1.setSize(numMainChannels, samplesPerBlock);
+  wetBandBuffer2.setSize(numMainChannels, samplesPerBlock);
+
+  monoDryLow.setSize(1, samplesPerBlock);
+  monoDryMid.setSize(1, samplesPerBlock);
+  monoDryHigh.setSize(1, samplesPerBlock);
+  monoWetLow.setSize(1, samplesPerBlock);
+  monoWetMid.setSize(1, samplesPerBlock);
+  monoWetHigh.setSize(1, samplesPerBlock);
 
   keySourceRouter.prepare(sampleRate, samplesPerBlock, numMainChannels, numSidechainChannels);
   keyConditioner.prepare(sampleRate, samplesPerBlock);
@@ -419,6 +443,12 @@ void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
   crossoverSplitter.prepare(sampleRate, samplesPerBlock, numMainChannels);
   multibandGate.prepare(sampleRate, samplesPerBlock, numMainChannels, 3);
   hissCurtain.prepare(sampleRate, samplesPerBlock, numMainChannels);
+
+  // Phase G prepare
+  lookaheadDelay.prepare(sampleRate, samplesPerBlock, numMainChannels);
+  stereoLinker.prepare(sampleRate, samplesPerBlock, numMainChannels);
+  anomalyGuard.prepare(sampleRate);
+  rejectedSignalRouter.prepare(sampleRate);
 
   prevTopologyBuffer.setSize(numMainChannels, samplesPerBlock);
   bandBuffer0.setSize(numMainChannels, samplesPerBlock);
@@ -462,6 +492,11 @@ void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
   crossoverSplitter.reset();
   multibandGate.reset();
   hissCurtain.reset();
+
+  lookaheadDelay.reset();
+  stereoLinker.reset();
+  anomalyGuard.reset();
+  rejectedSignalRouter.reset();
 }
 
 void ChugGateAudioProcessor::releaseResources() {
@@ -474,6 +509,23 @@ void ChugGateAudioProcessor::releaseResources() {
   bandBuffer1.setSize(0, 0);
   bandBuffer2.setSize(0, 0);
   detectorLevels.clear();
+
+  monoSidechainBuffer.setSize(0, 0);
+  dryMainCopyBuffer.setSize(0, 0);
+  monoWetBuffer.setSize(0, 0);
+  hissCurtainRejectBuffer.setSize(0, 0);
+  auditionOutputBuffer.setSize(0, 0);
+
+  wetBandBuffer0.setSize(0, 0);
+  wetBandBuffer1.setSize(0, 0);
+  wetBandBuffer2.setSize(0, 0);
+
+  monoDryLow.setSize(0, 0);
+  monoDryMid.setSize(0, 0);
+  monoDryHigh.setSize(0, 0);
+  monoWetLow.setSize(0, 0);
+  monoWetMid.setSize(0, 0);
+  monoWetHigh.setSize(0, 0);
 }
 
 void ChugGateAudioProcessor::reset() {
@@ -501,6 +553,11 @@ void ChugGateAudioProcessor::reset() {
   hissCurtain.reset();
   isCrossfading = false;
   crossfadeProgressSamples = 0;
+
+  lookaheadDelay.reset();
+  stereoLinker.reset();
+  anomalyGuard.reset();
+  rejectedSignalRouter.reset();
 }
 
 float ChugGateAudioProcessor::getParamValue(const std::atomic<float>* paramPtr, float defaultValue) const noexcept {
@@ -521,7 +578,7 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
     monoKeyBuffer.setSize(1, numSamples, false, true, true);
   }
   if (smoothedGainBuffer.getNumSamples() < numSamples) {
-    smoothedGainBuffer.setSize(1, numSamples, false, true, true);
+    smoothedGainBuffer.setSize(2, numSamples, false, true, true);
   }
 
   // Load parameters
@@ -570,42 +627,211 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       default: lookaheadMs = 0.0f; break;
   }
 
-  // Update key source router parameters
-  keySourceRouter.setSource(static_cast<ChugGate::DSP::KeySourceRouter::Source>(
-      static_cast<int>(getParamValue(params.keySource, 0.0f))));
-  keySourceRouter.setExternalBlend(getParamValue(params.externalBlend, 1.0f));
-  keySourceRouter.setFallbackMode(static_cast<ChugGate::DSP::KeySourceRouter::FallbackMode>(
-      static_cast<int>(getParamValue(params.fallbackMode, 0.0f))));
+  // Extract main channels and sidechain channels safely
+  auto mainInputBuffer = getBusBuffer(buffer, true, 0);
+  auto mainChannels = mainInputBuffer.getArrayOfReadPointers();
+  auto numMainChannels = mainInputBuffer.getNumChannels();
 
-  // Update key conditioner parameters
-  keyConditioner.setHighPassEnabled(getParamValue(params.hpfEnabled, 1.0f) > 0.5f);
-  keyConditioner.setHighPassFrequency(getParamValue(params.hpfFrequency, 70.0f));
-  keyConditioner.setHighPassSlope(static_cast<ChugGate::DSP::FilterSlope>(
-      static_cast<int>(getParamValue(params.hpfSlope, 0.0f))));
-
-  keyConditioner.setLowPassEnabled(getParamValue(params.lpfEnabled, 0.0f) > 0.5f);
-  keyConditioner.setLowPassFrequency(getParamValue(params.lpfFrequency, 12000.0f));
-  keyConditioner.setLowPassSlope(static_cast<ChugGate::DSP::FilterSlope>(
-      static_cast<int>(getParamValue(params.lpfSlope, 0.0f))));
-
-  const float emphasisFreq = getParamValue(params.emphasisFreq, 1200.0f);
-  const float emphasisGain = getParamValue(params.emphasisGain, 0.0f);
-  const float emphasisQ = getParamValue(params.emphasisQ, 1.0f);
-  keyConditioner.setEmphasisEnabled(emphasisGain != 0.0f);
-  keyConditioner.setEmphasisFrequency(emphasisFreq);
-  keyConditioner.setEmphasisQ(emphasisQ);
-  keyConditioner.setEmphasisGain(emphasisGain);
-
-  if (listenModeVal > 0) {
-      keyConditioner.setListenMode(static_cast<ChugGate::DSP::KeyConditioner::ListenMode>(listenModeVal - 1));
+  const float* const* sidechainChannels = nullptr;
+  int numSidechainChannels = 0;
+  juce::AudioBuffer<float> sidechainInputBuffer;
+  if (getBusCount(true) > 1) {
+    auto* sidechainBus = getBus(true, 1);
+    if (sidechainBus->isEnabled()) {
+      sidechainInputBuffer = getBusBuffer(buffer, true, 1);
+      sidechainChannels = sidechainInputBuffer.getArrayOfReadPointers();
+      numSidechainChannels = sidechainInputBuffer.getNumChannels();
+    }
   }
 
-  // Update powerline shield parameters
-  powerlineShield.setHumMode(static_cast<ChugGate::DSP::PowerlineShield::HumMode>(
-      static_cast<int>(getParamValue(params.humMode, 0.0f))));
-  powerlineShield.setHarmonics(static_cast<int>(getParamValue(params.humHarmonics, 0.0f)) + 1);
-  powerlineShield.setNotchQ(getParamValue(params.humNotchQ, 20.0f));
-  powerlineShield.setHumImmunityAmount(getParamValue(params.humImmunityAmount, 0.5f));
+  const bool sidechainActive = (numSidechainChannels > 0);
+  float* monoKey = monoKeyBuffer.getWritePointer(0);
+
+  // Pre-mix mono main input for AnomalyGuard and AlignmentAnalyzer
+  if (monoMainBuffer.getNumSamples() < numSamples) {
+    monoMainBuffer.setSize(1, numSamples, false, true, true);
+  }
+  float* monoMain = monoMainBuffer.getWritePointer(0);
+  if (numMainChannels > 0) {
+      std::copy(mainChannels[0], mainChannels[0] + numSamples, monoMain);
+      for (int c = 1; c < numMainChannels; ++c) {
+          for (int i = 0; i < numSamples; ++i) {
+              monoMain[i] += mainChannels[c][i];
+          }
+      }
+      const float invChannels = 1.0f / static_cast<float>(numMainChannels);
+      for (int i = 0; i < numSamples; ++i) {
+          monoMain[i] *= invChannels;
+      }
+  } else {
+      std::fill(monoMain, monoMain + numSamples, 0.0f);
+  }
+
+  // Pre-mix mono sidechain input for AnomalyGuard
+  const int keySourceIdx = static_cast<int>(getParamValue(params.keySource, 0.0f));
+  const bool needsExternal = (keySourceIdx == 1 || keySourceIdx == 2); // ExternalSidechain or BlendedMainExternal
+
+  float* monoSidechain = nullptr;
+  if (needsExternal && numSidechainChannels > 0 && sidechainChannels != nullptr) {
+      if (monoSidechainBuffer.getNumSamples() < numSamples) {
+          monoSidechainBuffer.setSize(1, numSamples, false, true, true);
+      }
+      monoSidechain = monoSidechainBuffer.getWritePointer(0);
+      std::copy(sidechainChannels[0], sidechainChannels[0] + numSamples, monoSidechain);
+      for (int c = 1; c < numSidechainChannels; ++c) {
+          for (int i = 0; i < numSamples; ++i) {
+              monoSidechain[i] += sidechainChannels[c][i];
+          }
+      }
+      float invSidechainChannels = 1.0f / static_cast<float>(numSidechainChannels);
+      for (int i = 0; i < numSamples; ++i) {
+          monoSidechain[i] *= invSidechainChannels;
+      }
+  }
+
+  // Run AnomalyGuard before routing to check for spikes, stuck keys, and dropouts
+  const bool isKeyValid = needsExternal ? (numSidechainChannels > 0 && sidechainChannels != nullptr) : true;
+  anomalyGuard.process(monoMain, needsExternal ? monoSidechain : monoMain, numSamples, isKeyValid);
+
+  // Apply AnomalyGuard dropout fallback logic to override KeySourceRouter's fallback mode
+  auto userFallbackMode = static_cast<ChugGate::DSP::KeySourceRouter::FallbackMode>(
+      static_cast<int>(getParamValue(params.fallbackMode, 0.0f)));
+  ChugGate::DSP::KeySourceRouter::FallbackMode activeFallbackMode = userFallbackMode;
+  if (anomalyGuard.isDropoutActive()) {
+      if (!anomalyGuard.shouldUseInternalFallback()) {
+          // During the dropout hold period, hold the state
+          activeFallbackMode = ChugGate::DSP::KeySourceRouter::FallbackMode::HoldState;
+      } else {
+          // After the hold period, switch to internal main key if fallback is enabled
+          if (userFallbackMode == ChugGate::DSP::KeySourceRouter::FallbackMode::InternalMain) {
+              activeFallbackMode = ChugGate::DSP::KeySourceRouter::FallbackMode::InternalMain;
+          } else {
+              activeFallbackMode = userFallbackMode;
+          }
+      }
+  }
+
+  // Update key source router parameters
+  keySourceRouter.setSource(static_cast<ChugGate::DSP::KeySourceRouter::Source>(keySourceIdx));
+  keySourceRouter.setExternalBlend(getParamValue(params.externalBlend, 1.0f));
+  keySourceRouter.setFallbackMode(activeFallbackMode);
+
+  // 1) Route key source to monoKey
+  keySourceRouter.process(mainChannels, numMainChannels,
+                          sidechainChannels, numSidechainChannels,
+                          monoKey, numSamples);
+
+  // If Raw Key Audition is active, copy monoKey to output now
+  if (enabled && !bypassed && listenModeVal == 1) {
+      for (int channel = 0; channel < numMainChannels; ++channel) {
+          if (float* channelData = buffer.getWritePointer(channel)) {
+              std::copy(monoKey, monoKey + numSamples, channelData);
+          }
+      }
+  }
+
+  // 2) Condition the key
+  keyConditioner.process(monoKey, numSamples);
+
+  // 3) Apply Powerline Shield
+  powerlineShield.process(monoKey, numSamples);
+
+  // If Conditioned Key Audition (or later stages fallback) is active, copy monoKey to output now
+  if (enabled && !bypassed && listenModeVal > 1) {
+      for (int channel = 0; channel < numMainChannels; ++channel) {
+          if (float* channelData = buffer.getWritePointer(channel)) {
+              std::copy(monoKey, monoKey + numSamples, channelData);
+          }
+      }
+  }
+
+  // Update CadenceTracker host tempo/BPM if playhead is available
+  if (auto* ph = getPlayHead()) {
+      auto positionInfo = ph->getPosition();
+      if (positionInfo.hasValue()) {
+          if (auto bpm = positionInfo->getBpm()) {
+              cadenceTracker.setHostTempoBpm(static_cast<float>(*bpm));
+          }
+      }
+  }
+
+  // Update CadenceTracker and NoiseFloorEstimator controls
+  cadenceTracker.setMode(cadenceEnabled ? cadenceSourceMode : static_cast<int>(ChugGate::DSP::CadenceTracker::Mode::Off));
+  cadenceTracker.setConstraintFactor(cadenceReleaseFraction);
+
+  noiseFloorEstimator.setSlowAdaptationEnabled(noiseAdaptiveEnabledVal);
+  noiseFloorEstimator.setSlowAdaptationLambda(1.0f - noiseAdaptiveRateVal);
+  noiseFloorEstimator.setSnrMarginDb(noiseSnrMarginVal);
+
+  // Compute alignment delay (calibration or manual parameter)
+  float alignmentDelayMs = 0.0f;
+  auto acceptedResult = alignmentAnalyzer.getAcceptedResult();
+  if (acceptedResult.valid) {
+      alignmentDelayMs = acceptedResult.offsetMs;
+  } else {
+      alignmentDelayMs = alignmentOffsetVal;
+      if (std::abs(alignmentOffsetVal) > 25.0f) {
+          alignmentDelayMs = juce::jlimit(-100.0f, 100.0f, alignmentOffsetVal);
+      } else {
+          alignmentDelayMs = juce::jlimit(-25.0f, 25.0f, alignmentOffsetVal);
+      }
+  }
+
+  // Apply alignment offset to FractionalDelay
+  fractionalDelay.setDelayMs(alignmentDelayMs);
+
+  // Push key + main onset audio into AlignmentAnalyzer before FractionalDelay
+  alignmentAnalyzer.process(monoKey, monoMain, numSamples);
+
+  // Apply FractionalDelay on key path
+  fractionalDelay.process(monoKey, numSamples);
+
+  // 1. Process Lookahead Delay on the input buffer (dry main)
+  lookaheadDelay.setLookaheadMs(lookaheadMs);
+  lookaheadDelay.processBlock(buffer);
+
+  // 2. Process residual main-path alignment delay (skew) on the buffer
+  const float negativeSkewMs = (alignmentDelayMs < 0.0f) ? -alignmentDelayMs : 0.0f;
+  const double residualMainDelaySamples = negativeSkewMs * getSampleRate() * 0.001;
+  const int residualDelaySamples = static_cast<int>(std::round(residualMainDelaySamples));
+
+  const int totalLatency = lookaheadDelay.getLatencySamples() + residualDelaySamples;
+  if (totalLatency != currentLatency) {
+      currentLatency = totalLatency;
+      setLatencySamples(currentLatency);
+  }
+
+  const int maxDelaySamples = mainDelayBuffers.getNumSamples();
+  if (maxDelaySamples > 0 && residualDelaySamples > 0) {
+      for (int channel = 0; channel < numMainChannels; ++channel) {
+          float* channelData = buffer.getWritePointer(channel);
+          float* delayData = mainDelayBuffers.getWritePointer(channel);
+          int writeIdx = mainDelayWriteIndex;
+          for (int i = 0; i < numSamples; ++i) {
+              float inputSample = channelData[i];
+              delayData[writeIdx] = inputSample;
+              
+              int readIdx = (writeIdx - residualDelaySamples + maxDelaySamples) % maxDelaySamples;
+              channelData[i] = delayData[readIdx];
+              
+              writeIdx = (writeIdx + 1) % maxDelaySamples;
+          }
+      }
+      mainDelayWriteIndex = (mainDelayWriteIndex + numSamples) % maxDelaySamples;
+  }
+
+  // Keep a copy of the delayed dry main signal in dryMainCopyBuffer for audition routing
+  if (dryMainCopyBuffer.getNumSamples() < numSamples || dryMainCopyBuffer.getNumChannels() < numMainChannels) {
+      dryMainCopyBuffer.setSize(numMainChannels, numSamples, false, true, true);
+  }
+  for (int c = 0; c < numMainChannels; ++c) {
+      dryMainCopyBuffer.copyFrom(c, 0, buffer.getReadPointer(c), numSamples);
+  }
+
+  // Update StereoLinker parameters
+  stereoLinker.setMode(static_cast<ChugGate::DSP::StereoLinker::LinkMode>(
+      static_cast<int>(getParamValue(params.linkMode, 0.0f))));
+  stereoLinker.setLinkAmount(getParamValue(params.linkAmount, 1.0f));
 
   // Update gate state machine and gain parameters
   stateMachine.setThresholdOpen(thresholdOpenVal);
@@ -661,147 +887,6 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   feedbackDetector.setRequireExternalDI(getParamValue(params.feedbackRequireExtKey, 0.0f) > 0.5f);
   feedbackDetector.setSafetyTimeout(getParamValue(params.feedbackSafetyTimeout, 10000.0f));
 
-  // Extract main channels and sidechain channels safely
-  auto mainInputBuffer = getBusBuffer(buffer, true, 0);
-  auto mainChannels = mainInputBuffer.getArrayOfReadPointers();
-  auto numMainChannels = mainInputBuffer.getNumChannels();
-
-  const float* const* sidechainChannels = nullptr;
-  int numSidechainChannels = 0;
-  juce::AudioBuffer<float> sidechainInputBuffer;
-  if (getBusCount(true) > 1) {
-    auto* sidechainBus = getBus(true, 1);
-    if (sidechainBus->isEnabled()) {
-      sidechainInputBuffer = getBusBuffer(buffer, true, 1);
-      sidechainChannels = sidechainInputBuffer.getArrayOfReadPointers();
-      numSidechainChannels = sidechainInputBuffer.getNumChannels();
-    }
-  }
-
-  const bool sidechainActive = (numSidechainChannels > 0);
-  float* monoKey = monoKeyBuffer.getWritePointer(0);
-
-  // 1) Route key source to monoKey
-  keySourceRouter.process(mainChannels, numMainChannels,
-                          sidechainChannels, numSidechainChannels,
-                          monoKey, numSamples);
-
-  // If Raw Key Audition is active, copy monoKey to output now
-  if (enabled && !bypassed && listenModeVal == 1) {
-      for (int channel = 0; channel < numMainChannels; ++channel) {
-          if (float* channelData = buffer.getWritePointer(channel)) {
-              std::copy(monoKey, monoKey + numSamples, channelData);
-          }
-      }
-  }
-
-  // 2) Condition the key
-  keyConditioner.process(monoKey, numSamples);
-
-  // 3) Apply Powerline Shield
-  powerlineShield.process(monoKey, numSamples);
-
-  // If Conditioned Key Audition (or later stages fallback) is active, copy monoKey to output now
-  if (enabled && !bypassed && listenModeVal > 1) {
-      for (int channel = 0; channel < numMainChannels; ++channel) {
-          if (float* channelData = buffer.getWritePointer(channel)) {
-              std::copy(monoKey, monoKey + numSamples, channelData);
-          }
-      }
-  }
-
-  // Pre-mix mono main input for AlignmentAnalyzer
-  if (monoMainBuffer.getNumSamples() < numSamples) {
-    monoMainBuffer.setSize(1, numSamples, false, true, true);
-  }
-  float* monoMain = monoMainBuffer.getWritePointer(0);
-  if (numMainChannels > 0) {
-      std::copy(mainChannels[0], mainChannels[0] + numSamples, monoMain);
-      for (int c = 1; c < numMainChannels; ++c) {
-          for (int i = 0; i < numSamples; ++i) {
-              monoMain[i] += mainChannels[c][i];
-          }
-      }
-      const float invChannels = 1.0f / static_cast<float>(numMainChannels);
-      for (int i = 0; i < numSamples; ++i) {
-          monoMain[i] *= invChannels;
-      }
-  } else {
-      std::fill(monoMain, monoMain + numSamples, 0.0f);
-  }
-
-  // Update CadenceTracker host tempo/BPM if playhead is available
-  if (auto* ph = getPlayHead()) {
-      auto positionInfo = ph->getPosition();
-      if (positionInfo.hasValue()) {
-          if (auto bpm = positionInfo->getBpm()) {
-              cadenceTracker.setHostTempoBpm(static_cast<float>(*bpm));
-          }
-      }
-  }
-
-  // Update CadenceTracker and NoiseFloorEstimator controls
-  cadenceTracker.setMode(cadenceEnabled ? cadenceSourceMode : static_cast<int>(ChugGate::DSP::CadenceTracker::Mode::Off));
-  cadenceTracker.setConstraintFactor(cadenceReleaseFraction);
-
-  noiseFloorEstimator.setSlowAdaptationEnabled(noiseAdaptiveEnabledVal);
-  noiseFloorEstimator.setSlowAdaptationLambda(1.0f - noiseAdaptiveRateVal);
-  noiseFloorEstimator.setSnrMarginDb(noiseSnrMarginVal);
-
-  // Compute alignment delay (calibration or manual parameter)
-  float alignmentDelayMs = 0.0f;
-  auto acceptedResult = alignmentAnalyzer.getAcceptedResult();
-  if (acceptedResult.valid) {
-      alignmentDelayMs = acceptedResult.offsetMs;
-  } else {
-      alignmentDelayMs = alignmentOffsetVal;
-      if (std::abs(alignmentOffsetVal) > 25.0f) {
-          alignmentDelayMs = juce::jlimit(-100.0f, 100.0f, alignmentOffsetVal);
-      } else {
-          alignmentDelayMs = juce::jlimit(-25.0f, 25.0f, alignmentOffsetVal);
-      }
-  }
-
-  // Apply alignment offset to FractionalDelay
-  fractionalDelay.setDelayMs(alignmentDelayMs);
-
-  // Calculate total main-path delay (negative DI skew + lookahead) and report latency
-  const float negativeSkewMs = (alignmentDelayMs < 0.0f) ? -alignmentDelayMs : 0.0f;
-  const float totalMainDelayMs = lookaheadMs + negativeSkewMs;
-  const double mainDelaySamples = totalMainDelayMs * getSampleRate() * 0.001;
-  const int delaySamples = static_cast<int>(std::round(mainDelaySamples));
-
-  if (delaySamples != currentLatency) {
-      currentLatency = delaySamples;
-      setLatencySamples(currentLatency);
-  }
-
-  // Push key + main onset audio into AlignmentAnalyzer before FractionalDelay
-  alignmentAnalyzer.process(monoKey, monoMain, numSamples);
-
-  // Apply FractionalDelay on key path
-  fractionalDelay.process(monoKey, numSamples);
-
-  // Unconditionally delay the main path if delay is engaged (preserves latency/phase alignment)
-  const int maxDelaySamples = mainDelayBuffers.getNumSamples();
-  if (maxDelaySamples > 0 && delaySamples > 0) {
-      for (int channel = 0; channel < numMainChannels; ++channel) {
-          float* channelData = buffer.getWritePointer(channel);
-          float* delayData = mainDelayBuffers.getWritePointer(channel);
-          int writeIdx = mainDelayWriteIndex;
-          for (int i = 0; i < numSamples; ++i) {
-              float inputSample = channelData[i];
-              delayData[writeIdx] = inputSample;
-              
-              int readIdx = (writeIdx - delaySamples + maxDelaySamples) % maxDelaySamples;
-              channelData[i] = delayData[readIdx];
-              
-              writeIdx = (writeIdx + 1) % maxDelaySamples;
-          }
-      }
-      mainDelayWriteIndex = (mainDelayWriteIndex + numSamples) % maxDelaySamples;
-  }
-
   // Ensure Phase F auxiliary buffers are large enough
   if (prevTopologyBuffer.getNumSamples() < numSamples || prevTopologyBuffer.getNumChannels() < numMainChannels) {
     prevTopologyBuffer.setSize(numMainChannels, numSamples, false, true, true);
@@ -820,7 +905,8 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   }
 
   // Run the sample-by-sample DSP loop
-  float* smoothedGains = smoothedGainBuffer.getWritePointer(0);
+  float* smoothedGainsL = smoothedGainBuffer.getWritePointer(0);
+  float* smoothedGainsR = smoothedGainBuffer.getWritePointer(1);
   bool anyTransient = false;
   bool anySustain = false;
   float sumL = 0.0f;
@@ -832,11 +918,22 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       // A) Detector
       detectorEngine.processSample(keySample);
       float L = detectorEngine.getLevelDb();
-      sumL += L;
-      detectorLevels[static_cast<size_t>(i)] = L;
+
+      // Feed to StereoLinker for envelopes (using mono L for both left and right since detector is mono)
+      auto linkedEnv = stereoLinker.linkEnvelopes(L, L);
+      float linkedL = linkedEnv.left;
+
+      sumL += linkedL;
+      detectorLevels[static_cast<size_t>(i)] = linkedL;
 
       // B) AttackGuard
-      auto attackGuardOutput = attackGuard.processSample(keySample, L);
+      auto attackGuardOutput = attackGuard.processSample(keySample, linkedL);
+      if (anomalyGuard.shouldSuppressOpen()) {
+          // Suppress false opens into AttackGuard/state path
+          attackGuardOutput.validAttack = false;
+          attackGuardOutput.thresholdReductionDb = 0.0f;
+      }
+
       if (attackGuardOutput.validAttack) {
           anyTransient = true;
           cadenceTracker.noteOnset();
@@ -848,11 +945,11 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       auto f0Estimate = fundamentalEstimator.getEstimate();
 
       // D) SustainAnalyzer + FeedbackDetector
-      auto sustainOutput = sustainAnalyzer.processSample(keySample, L, f0Estimate, 0.0f);
+      auto sustainOutput = sustainAnalyzer.processSample(keySample, linkedL, f0Estimate, 0.0f);
       if (sustainOutput.sustainProtection) {
           anySustain = true;
       }
-      auto feedbackOutput = feedbackDetector.processSample(keySample, L, f0Estimate, attackGuardOutput.transientStrength, sidechainActive);
+      auto feedbackOutput = feedbackDetector.processSample(keySample, linkedL, f0Estimate, attackGuardOutput.transientStrength, sidechainActive);
 
       // E) State machine
       stateMachine.setAttackAssist(attackGuardOutput.validAttack, attackGuardOutput.thresholdReductionDb);
@@ -868,7 +965,7 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       evidence.feedbackProtection = feedbackOutput.protectOpen;
       evidence.adaptiveReleaseMs = sustainOutput.adaptiveReleaseMs;
 
-      auto stateOutput = stateMachine.processSample(L, L, evidence);
+      auto stateOutput = stateMachine.processSample(linkedL, linkedL, evidence);
 
       // F) Gain computer
       float activeFloor = floorVal;
@@ -877,7 +974,7 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       }
 
       ChugGate::DSP::GainComputer::Input gainInput;
-      gainInput.detectorLevelDb = L;
+      gainInput.detectorLevelDb = linkedL;
       gainInput.thresholdDb = thresholdOpenVal;
       gainInput.ratio = ratioVal;
       gainInput.floorDb = activeFloor;
@@ -897,12 +994,15 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
 
       float smoothedGain = gainSmoother.processSample(targetGain, 0);
 
-      smoothedGains[i] = smoothedGain;
+      // Link gains with StereoLinker
+      auto linkedGainPair = stereoLinker.linkGains(smoothedGain, smoothedGain, smoothedGain);
+      smoothedGainsL[i] = linkedGainPair.left;
+      smoothedGainsR[i] = linkedGainPair.right;
 
       // Update real-time state for UI/timeline with the last sample of the block
       if (i == numSamples - 1) {
           realTimeState.currentState.store(static_cast<int>(stateOutput.state));
-          realTimeState.lastGain.store(smoothedGain);
+          realTimeState.lastGain.store(0.5f * (linkedGainPair.left + linkedGainPair.right));
       }
   }
 
@@ -951,10 +1051,10 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
           }
           
           // Process current topology on buffer
-          processTopology(activeTopology, buffer, smoothedGains, lastActiveRelease, avgL, numSamples);
+          processTopology(activeTopology, buffer, smoothedGainsL, smoothedGainsR, lastActiveRelease, avgL, numSamples);
           
           // Process previous topology on prevTopologyBuffer
-          processTopology(prevTopology, prevTopologyBuffer, smoothedGains, lastActiveRelease, avgL, numSamples);
+          processTopology(prevTopology, prevTopologyBuffer, smoothedGainsL, smoothedGainsR, lastActiveRelease, avgL, numSamples);
           
           // Crossfade blend: buffer = (1-alpha)*prevTopologyBuffer + alpha*buffer
           int progress = crossfadeProgressSamples;
@@ -975,7 +1075,7 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
           crossfadeProgressSamples = progress;
       } else {
           // No crossfade, process current topology directly in-place
-          processTopology(activeTopology, buffer, smoothedGains, lastActiveRelease, avgL, numSamples);
+          processTopology(activeTopology, buffer, smoothedGainsL, smoothedGainsR, lastActiveRelease, avgL, numSamples);
       }
 
       // Apply output trim to the final processed signal
@@ -990,22 +1090,165 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       // If bypassed/disabled, we don't apply the gain, but we still ran the DSP state tracking.
       // We don't modify the buffer (it remains dry).
   }
+
+  // Compute monoDry and monoWet downmixes for audition routing
+  float* monoDry = monoMainBuffer.getWritePointer(0); // reuse monoMainBuffer as monoDry
+  if (numMainChannels > 0) {
+      std::copy(dryMainCopyBuffer.getReadPointer(0), dryMainCopyBuffer.getReadPointer(0) + numSamples, monoDry);
+      for (int c = 1; c < numMainChannels; ++c) {
+          for (int i = 0; i < numSamples; ++i) {
+              monoDry[i] += dryMainCopyBuffer.getSample(c, i);
+          }
+      }
+      const float invChannels = 1.0f / static_cast<float>(numMainChannels);
+      for (int i = 0; i < numSamples; ++i) {
+          monoDry[i] *= invChannels;
+      }
+  } else {
+      std::fill_n(monoDry, numSamples, 0.0f);
+  }
+
+  float* monoWet = monoWetBuffer.getWritePointer(0);
+  if (numMainChannels > 0) {
+      std::copy(buffer.getReadPointer(0), buffer.getReadPointer(0) + numSamples, monoWet);
+      for (int c = 1; c < numMainChannels; ++c) {
+          for (int i = 0; i < numSamples; ++i) {
+              monoWet[i] += buffer.getSample(c, i);
+          }
+      }
+      const float invChannels = 1.0f / static_cast<float>(numMainChannels);
+      for (int i = 0; i < numSamples; ++i) {
+          monoWet[i] *= invChannels;
+      }
+  } else {
+      std::fill_n(monoWet, numSamples, 0.0f);
+  }
+
+  // 6) RejectedSignalRouter Audition Routing
+  auto auditionMode = static_cast<ChugGate::DSP::RejectedSignalRouter::Mode>(
+      static_cast<int>(getParamValue(params.rejectedMode, 0.0f)));
+
+  if (enabled && !bypassed && auditionMode != ChugGate::DSP::RejectedSignalRouter::Mode::Off) {
+      rejectedSignalRouter.setRejectedMode(auditionMode);
+      rejectedSignalRouter.setStateFilterMode(static_cast<ChugGate::DSP::RejectedSignalRouter::StateFilterMode>(
+          static_cast<int>(getParamValue(params.stateFilterMode, 0.0f))));
+      rejectedSignalRouter.setPerformanceState(getCurrentState());
+
+      ChugGate::DSP::RejectedSignalRouter::ProcessArgs args;
+      args.dryMain = monoDry;
+      args.wetMain = monoWet;
+      args.numSamples = numSamples;
+      args.detectorKey = monoKey;
+
+      if (activeTopology == 3) {
+          args.hissCurtainReject = hissCurtainRejectBuffer.getReadPointer(0);
+      }
+
+      auto downmixToMono = [](const juce::AudioBuffer<float>& source, juce::AudioBuffer<float>& dest, int nSamples) {
+          int nChannels = source.getNumChannels();
+          float* destData = dest.getWritePointer(0);
+          if (nChannels > 0) {
+              std::copy(source.getReadPointer(0), source.getReadPointer(0) + nSamples, destData);
+              for (int c = 1; c < nChannels; ++c) {
+                  for (int j = 0; j < nSamples; ++j) {
+                      destData[j] += source.getSample(c, j);
+                  }
+              }
+              float inv = 1.0f / static_cast<float>(nChannels);
+              for (int j = 0; j < nSamples; ++j) {
+                  destData[j] *= inv;
+              }
+          } else {
+              std::fill_n(destData, nSamples, 0.0f);
+          }
+      };
+
+      if ((activeTopology == 1 || activeTopology == 2) &&
+          (auditionMode == ChugGate::DSP::RejectedSignalRouter::Mode::All ||
+           auditionMode == ChugGate::DSP::RejectedSignalRouter::Mode::Weight ||
+           auditionMode == ChugGate::DSP::RejectedSignalRouter::Mode::Voice ||
+           auditionMode == ChugGate::DSP::RejectedSignalRouter::Mode::Hiss))
+      {
+          for (int c = 0; c < numMainChannels; ++c) {
+              prevTopologyBuffer.copyFrom(c, 0, buffer.getReadPointer(c), numSamples);
+          }
+
+          if (activeTopology == 1) { // Dual Band
+              const float dualCrossoverFreqVal = getParamValue(params.dualCrossoverFreq, 4000.0f);
+              crossoverSplitter.setMode(ChugGate::DSP::CrossoverSplitter::Mode::TwoWay);
+              crossoverSplitter.setDualCrossoverHz(dualCrossoverFreqVal);
+              crossoverSplitter.processBlock(prevTopologyBuffer, wetBandBuffer0, wetBandBuffer1, wetBandBuffer2);
+
+              downmixToMono(bandBuffer0, monoDryLow, numSamples);
+              downmixToMono(bandBuffer1, monoDryHigh, numSamples);
+              downmixToMono(wetBandBuffer0, monoWetLow, numSamples);
+              downmixToMono(wetBandBuffer1, monoWetHigh, numSamples);
+
+              args.dryLow = monoDryLow.getReadPointer(0);
+              args.wetLow = monoWetLow.getReadPointer(0);
+              args.dryHigh = monoDryHigh.getReadPointer(0);
+              args.wetHigh = monoWetHigh.getReadPointer(0);
+          }
+          else if (activeTopology == 2) { // Tri Band
+              const float triLowCrossoverFreqVal = getParamValue(params.triLowCrossoverFreq, 250.0f);
+              const float triHighCrossoverFreqVal = getParamValue(params.triHighCrossoverFreq, 4500.0f);
+              crossoverSplitter.setMode(ChugGate::DSP::CrossoverSplitter::Mode::ThreeWay);
+              crossoverSplitter.setTriCrossoversHz(triLowCrossoverFreqVal, triHighCrossoverFreqVal);
+              crossoverSplitter.processBlock(prevTopologyBuffer, wetBandBuffer0, wetBandBuffer1, wetBandBuffer2);
+
+              downmixToMono(bandBuffer0, monoDryLow, numSamples);
+              downmixToMono(bandBuffer1, monoDryMid, numSamples);
+              downmixToMono(bandBuffer2, monoDryHigh, numSamples);
+              downmixToMono(wetBandBuffer0, monoWetLow, numSamples);
+              downmixToMono(wetBandBuffer1, monoWetMid, numSamples);
+              downmixToMono(wetBandBuffer2, monoWetHigh, numSamples);
+
+              args.dryLow = monoDryLow.getReadPointer(0);
+              args.wetLow = monoWetLow.getReadPointer(0);
+              args.dryMid = monoDryMid.getReadPointer(0);
+              args.wetMid = monoWetMid.getReadPointer(0);
+              args.dryHigh = monoDryHigh.getReadPointer(0);
+              args.wetHigh = monoWetHigh.getReadPointer(0);
+          }
+      }
+
+      if (auditionOutputBuffer.getNumSamples() < numSamples) {
+          auditionOutputBuffer.setSize(1, numSamples, false, true, true);
+      }
+      float* auditionOut = auditionOutputBuffer.getWritePointer(0);
+
+      rejectedSignalRouter.process(args, auditionOut);
+
+      for (int channel = 0; channel < numMainChannels; ++channel) {
+          if (float* channelData = buffer.getWritePointer(channel)) {
+              std::copy(auditionOut, auditionOut + numSamples, channelData);
+          }
+      }
+  }
 }
 
-void ChugGateAudioProcessor::processTopology(int topology, juce::AudioBuffer<float>& targetBuffer, const float* smoothedGains, float lastActiveRelease, float avgL, int numSamples)
+void ChugGateAudioProcessor::processTopology(int topology, juce::AudioBuffer<float>& targetBuffer, const float* smoothedGainsL, const float* smoothedGainsR, float lastActiveRelease, float avgL, int numSamples)
 {
     const int numChannels = targetBuffer.getNumChannels();
     
+    // Note on Stereo Linker / DualMono Gating Limitation:
+    // Since the detection, state machine, and gain smoothing paths are processed as a single shared mono signal (monoKey),
+    // true independent L/R state machines and independent multiband gates are not run. For FullBand and HissCurtain topologies,
+    // the L/R channels are gated with separate linked gains smoothed from a shared state, but for DualBand and TriBand multiband
+    // gate modes, the same gain is applied to both channels. True DualMono would require duplicating the detector engine,
+    // state machine, gain computer, and gain smoothers for both left and right channels.
+    
     if (topology == 0) // Full Band
     {
-        // Full Band: bypass splitter; single-band MultibandGate or existing broadband gain path
+        // Full Band: bypass splitter; apply L/R gains per channel
         for (int channel = 0; channel < numChannels; ++channel)
         {
             if (float* channelData = targetBuffer.getWritePointer(channel))
             {
+                const float* gains = (channel == 0) ? smoothedGainsL : ((channel == 1) ? smoothedGainsR : smoothedGainsL);
                 for (int i = 0; i < numSamples; ++i)
                 {
-                    channelData[i] *= smoothedGains[i];
+                    channelData[i] *= gains[i];
                 }
             }
         }
@@ -1016,7 +1259,7 @@ void ChugGateAudioProcessor::processTopology(int topology, juce::AudioBuffer<flo
         const float dualCrossoverFreqVal = getParamValue(params.dualCrossoverFreq, 4000.0f);
         
         crossoverSplitter.setMode(ChugGate::DSP::CrossoverSplitter::Mode::TwoWay);
-        crossoverSplitter.setDualCrossoverFreq(dualCrossoverFreqVal);
+        crossoverSplitter.setDualCrossoverHz(dualCrossoverFreqVal);
         crossoverSplitter.processBlock(targetBuffer, bandBuffer0, bandBuffer1, bandBuffer2);
         
         const float attackVal = getParamValue(params.attack, 1.0f);
@@ -1080,7 +1323,7 @@ void ChugGateAudioProcessor::processTopology(int topology, juce::AudioBuffer<flo
         multibandGate.setBandMute(1, getParamValue(params.bandMid.mute, 0.0f) > 0.5f);
         multibandGate.setBandSolo(1, getParamValue(params.bandMid.solo, 0.0f) > 0.5f);
         multibandGate.setBandThresholdOffset(1, getParamValue(params.bandMid.thresholdOffset, 0.0f));
-
+ 
         // Band 2 (High/Hiss) uses bandHigh params
         multibandGate.setBandFloorDb(2, getParamValue(params.bandHigh.floor, -80.0f));
         multibandGate.setBandOpenTime(2, std::max(0.01f, attackVal + getParamValue(params.bandHigh.attackOffset, 0.0f)));
@@ -1104,14 +1347,15 @@ void ChugGateAudioProcessor::processTopology(int topology, juce::AudioBuffer<flo
     else if (topology == 3) // Hiss Curtain
     {
         // Apply curtain on open/sustaining audio after main gain law:
-        // First apply broadband gain in-place
+        // First apply broadband L/R gains in-place
         for (int channel = 0; channel < numChannels; ++channel)
         {
             if (float* channelData = targetBuffer.getWritePointer(channel))
             {
+                const float* gains = (channel == 0) ? smoothedGainsL : ((channel == 1) ? smoothedGainsR : smoothedGainsL);
                 for (int i = 0; i < numSamples; ++i)
                 {
-                    channelData[i] *= smoothedGains[i];
+                    channelData[i] *= gains[i];
                 }
             }
         }
@@ -1123,6 +1367,7 @@ void ChugGateAudioProcessor::processTopology(int topology, juce::AudioBuffer<flo
         
         // Feed SNR_H: L - noise floor (broadband envelope residual heuristic)
         float highBandFloor = noiseFloorEstimator.getBandFloorDb(3);
+        HighBandFloorCheck:
         if (highBandFloor > 0.0f || highBandFloor < -120.0f) {
             highBandFloor = noiseFloorEstimator.getBroadbandFloorDb();
         }

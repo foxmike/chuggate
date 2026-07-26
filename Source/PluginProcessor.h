@@ -19,6 +19,10 @@
 #include "DSP/CrossoverSplitter.h"
 #include "DSP/MultibandGate.h"
 #include "DSP/HissCurtain.h"
+#include "DSP/LookaheadDelay.h"
+#include "DSP/StereoLinker.h"
+#include "DSP/AnomalyGuard.h"
+#include "DSP/RejectedSignalRouter.h"
 
 class ChugGateAudioProcessorEditor;
 
@@ -204,6 +208,12 @@ private:
     std::atomic<float>* hissCurtainMaxFreq = nullptr;
     std::atomic<float>* hissCurtainDepth = nullptr;
 
+    // Phase G additions
+    std::atomic<float>* linkMode = nullptr;
+    std::atomic<float>* linkAmount = nullptr;
+    std::atomic<float>* rejectedMode = nullptr;
+    std::atomic<float>* stateFilterMode = nullptr;
+
     struct BandPointers {
       std::atomic<float>* floor = nullptr;
       std::atomic<float>* thresholdOffset = nullptr;
@@ -245,7 +255,31 @@ private:
   juce::AudioBuffer<float> bandBuffer2;
   std::vector<float> detectorLevels;
 
-  void processTopology(int topology, juce::AudioBuffer<float>& targetBuffer, const float* smoothedGains, float lastActiveRelease, float avgL, int numSamples);
+  // Phase G components
+  ChugGate::DSP::LookaheadDelay lookaheadDelay;
+  ChugGate::DSP::StereoLinker stereoLinker;
+  ChugGate::DSP::AnomalyGuard anomalyGuard;
+  ChugGate::DSP::RejectedSignalRouter rejectedSignalRouter;
+
+  // Phase G state & buffers
+  juce::AudioBuffer<float> monoSidechainBuffer;
+  juce::AudioBuffer<float> dryMainCopyBuffer;
+  juce::AudioBuffer<float> monoWetBuffer;
+  juce::AudioBuffer<float> hissCurtainRejectBuffer;
+  juce::AudioBuffer<float> auditionOutputBuffer;
+
+  juce::AudioBuffer<float> wetBandBuffer0;
+  juce::AudioBuffer<float> wetBandBuffer1;
+  juce::AudioBuffer<float> wetBandBuffer2;
+
+  juce::AudioBuffer<float> monoDryLow;
+  juce::AudioBuffer<float> monoDryMid;
+  juce::AudioBuffer<float> monoDryHigh;
+  juce::AudioBuffer<float> monoWetLow;
+  juce::AudioBuffer<float> monoWetMid;
+  juce::AudioBuffer<float> monoWetHigh;
+
+  void processTopology(int topology, juce::AudioBuffer<float>& targetBuffer, const float* smoothedGainsL, const float* smoothedGainsR, float lastActiveRelease, float avgL, int numSamples);
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChugGateAudioProcessor)
 };
