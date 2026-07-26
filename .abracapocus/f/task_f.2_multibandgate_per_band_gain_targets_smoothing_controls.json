@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "task_id": "f.2",
+  "phase": "F",
+  "phase_id": "f",
+  "title": "MultibandGate \u2014 per-band gain targets, smoothing, controls",
+  "description": "Implement Source/DSP/MultibandGate to apply per-band target gains with independent open/close smoothing and recombine bands to a single output, consuming CrossoverSplitter-style band buffers.\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md sections 15\u201316 (gate/expansion laws, floor, curve shape, per-band open/close smoothing, y[n]=sum G_b * x_b)\n- Source/DSP/CrossoverSplitter.* public band-buffer / mode API from f.1\n- Existing Source/DSP/GainSmoother.* or gate gain units from earlier phases for polish consistency\n- Source/ParameterIDs.h for per-band threshold/floor/attack/hold/release/mute/solo IDs if present\n\nImplement MultibandGate.h/.cpp per \u00a715\u201316:\n- Support 1 (full), 2 (dual), or 3 (tri) active bands. Internally hold G_b and G_b* linear gains per band.\n- Target gain path: accept external per-band target gains G_b*[n] (linear) set each block/sample from dialed thresholds OR expose setBandTargetGain / processTargets from control-rate log-energy + threshold + floor + curve. Minimum control surface:\n  - per-band floor G_floor (dB mapped via g_floor = 10^(G_floor_dB/20), range 0 dB through \u221280 dB)\n  - optional per-band mute (force floor/near-zero) and solo (other bands muted)\n  - curve shape g_shaped = g_floor + (1-g_floor) * S^gamma with gamma control (Natural/Firm/Clamp)\n  - soft vs hard gate kneewish behavior may remain simplified if full \u00a715 laws are deferred to shared detector \u2014 document assumptions; core required behavior is target + smoothing + combine.\n- Per-band smoothing (\u00a716):\n  alpha_b = exp(-1/(fs * tau_open_b)) when G_b* > G_b\n  alpha_b = exp(-1/(fs * tau_close_b)) when G_b* <= G_b\n  G_b[n] = alpha_b * G_b[n-1] + (1-alpha_b) * G_b*[n]\n  Separate tau_open_b / tau_close_b (and optional per-band offsets/multipliers) settable per band.\n- Output: y[n] = sum_b G_b[n] * x_b[n] written to a mono/stereo output buffer. Apply gains sample-wise; no zipper on floor/threshold parameter moves beyond caring about G_b smoothing.\n- Integration with CrossoverSplitter: either take externally split band buffers + write sum, or optionally own a CrossoverSplitter member used only when an internal process(input) convenience is called \u2014 prefer external split ownership so f.4 can share the splitter across topology. Document the chosen API.\n- prepare(sampleRate, maxBlockSize, numChannels, maxBands)/reset(); realtime-safe; fixed maxBands <= 3.\n\nDo NOT implement HissCurtain. Do NOT edit PluginProcessor or CMakeLists.txt (f.4). Do NOT write tests (f.5). Do NOT reimplement CrossoverSplitter math \u2014 include/use its header if needed.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/MultibandGate.h and Source/DSP/MultibandGate.cpp exist",
+    "MultibandGate supports up to three bands with per-band target gains G_b*",
+    "MultibandGate applies separate open/close smoothing alphas from tau_open_b and tau_close_b as in spec \u00a716",
+    "MultibandGate reconstructs output as y[n] = sum_b G_b[n] * x_b[n]",
+    "MultibandGate exposes per-band floor (0 dB to \u221280 dB mapping) and mute/solo controls",
+    "MultibandGate supports curve shape via gamma (or named Natural/Firm/Clamp) on the target path",
+    "No heap allocation in the per-block process path after prepare",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/MultibandGate.h",
+    "Source/DSP/MultibandGate.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/CrossoverSplitter.*",
+    "modify Source/DSP/HissCurtain.*",
+    "implement tests/MultibandGateTests.cpp",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread"
+  ],
+  "allowed_symbols": [
+    "MultibandGate",
+    "prepare",
+    "reset",
+    "process",
+    "setNumBands",
+    "setBandTargetGain",
+    "setBandFloorDb",
+    "setBandOpenTime",
+    "setBandCloseTime",
+    "setBandMute",
+    "setBandSolo",
+    "setCurveGamma",
+    "getBandGain"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "accept pre-split band buffers from CrossoverSplitter rather than owning the splitter",
+      "map dB floors with 10^(dB/20)",
+      "simplify hard/soft/expander knee to target-gain + gamma if full detector law lives upstream",
+      "use plain C++20 + JUCE types already in the project"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt target_sources",
+      "rewrite CrossoverSplitter implementation",
+      "implement HissCurtain SNR/TPT path inside MultibandGate"
+    ]
+  },
+  "dependencies": [
+    "f.1"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

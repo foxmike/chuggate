@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "task_id": "h.2",
+  "phase": "H",
+  "phase_id": "h",
+  "title": "PerformanceHistory \u2014 ring buffer time series for timeline visualization",
+  "description": "Implement Source/Analysis/PerformanceHistory as the fixed-memory ring buffer backing the Performance Timeline visualization (spec \u00a720.1).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a720.1 Performance Timeline lanes (key envelope, main envelope, open/close thresholds, noise floor, transient events, sustain confidence, gate state lane, output gain, lookahead region, alignment offset, attenuation shading)\n- .abracapocus/CHUGGATE_SPEC.md \u00a728.2 analysis transport and QualityMode (Off/Live/Studio/Diagnose)\n- Source/Analysis/AnalysisFifo.h AnalysisFrame fields and QualityMode from h.1\n\nImplement PerformanceHistory.h/.cpp:\n- Ring buffer of timeline samples/slots (fixed capacity from prepare). History duration configurable in [2, 30] seconds; sample/slot rate is control-rate or decimated audio (e.g. one slot per AnalysisFrame push or fixed Hz); document chosen rate.\n- Per-slot series at minimum: keyEnvelope, mainEnvelope, thresholdOpen, thresholdClose, noiseFloor, gateState, outputGain, transientMarker, sustainConfidence. Optional: alignmentOffset, lookaheadRegion flag if present on AnalysisFrame.\n- External API for GUI/message thread: pushFromFrame(const AnalysisFrame&) or push(...scalars...); getDurationSeconds / setDurationSeconds(2..30) that retire capacity or mark valid window without audio-thread realloc; getNumSamples / copyRecent(...) into caller buffers for painting.\n- All writes/reads use only preallocated storage. When QualityMode is Off, ignore pushes. Live may retain shorter effective window or higher decimation than Studio/Diagnose if helpful \u2014 document.\n- prepare(sampleRateOrControlRate, maxDurationSeconds=30, numChannels as needed) / reset().\n- Runs exclusively on background/message thread consumers or accepts already-dequeued frames from AnalysisFifo (do not touch AbstractFifo internals beyond using public AnalysisFrame).\n\nDo NOT implement NoiseFingerprint, AlignmentScopeData, integrity analyzers, PluginProcessor, CMakeLists, or tests.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/Analysis/PerformanceHistory.h and Source/Analysis/PerformanceHistory.cpp exist",
+    "PerformanceHistory stores ring-buffer series for envelopes, thresholds, noise floor, gate state, gain, transients, and sustain confidence",
+    "History duration is configurable in the range 2\u201330 seconds with fixed memory sized in prepare",
+    "QualityMode Off ignores/no-ops push updates",
+    "copyRecent or equivalent read API exposes contiguous or two-segment ring data for GUI painting without allocating",
+    "No heap allocation on the hot push path after prepare",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/Analysis/PerformanceHistory.h",
+    "Source/Analysis/PerformanceHistory.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/Analysis/AnalysisFifo.*",
+    "modify Source/Analysis/NoiseFingerprint.*",
+    "modify Source/Analysis/AlignmentScopeData.*",
+    "modify Source/Analysis/AttackIntegrityAnalyzer.*",
+    "modify Source/Analysis/TailIntegrityAnalyzer.*",
+    "implement tests/AnalysisTests.cpp",
+    "add non-JUCE third-party dependencies",
+    "allocate beyond prepare/setDuration\u2019s controlled reallocation path on the audio thread"
+  ],
+  "allowed_symbols": [
+    "PerformanceHistory",
+    "prepare",
+    "reset",
+    "pushFromFrame",
+    "push",
+    "setDurationSeconds",
+    "getDurationSeconds",
+    "getNumSamples",
+    "copyRecent",
+    "setQualityMode"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "decimate AnalysisFrame stream to a fixed control-rate history Hz",
+      "store gateState as uint8_t/int matching state-machine encoding",
+      "resize ring only from message thread when duration changes, with double-buffer or exchange if needed",
+      "include optional alignment/lookahead series when AnalysisFrame provides them"
+    ],
+    "forbidden": [
+      "modify AnalysisFifo implementation",
+      "wire PluginProcessor processBlock",
+      "implement attack/tail integrity scoring inside PerformanceHistory",
+      "perform FFT or heavy spectral work in this class"
+    ]
+  },
+  "dependencies": [
+    "h.1"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

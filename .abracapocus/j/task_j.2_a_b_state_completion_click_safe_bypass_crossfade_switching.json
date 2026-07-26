@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "task_id": "j.2",
+  "phase": "J",
+  "phase_id": "j",
+  "title": "A/B state completion, click-safe bypass, crossfade switching",
+  "description": "Complete StateManager A/B comparison: two full configurations, instant switch with click-safe crossfade, copy A\u2192B, and click-free latency-correct bypass hooks (CHUGGATE_SPEC.md \u00a722.1, \u00a722.2).\n\nBefore editing, inspect:\n- Source/StateManager.h and Source/StateManager.cpp from phase A (existing A/B slots skeleton)\n- .abracapocus/CHUGGATE_SPEC.md \u00a722 Gain Matching and Comparison\n- Source/ParameterIDs.h for bypass / A-B selector IDs if present\n- Source/PluginProcessor.h for how APVTS state is get/setStateInformation listed (read-only; do not edit processor here)\n\nExtend Source/StateManager.h/.cpp only:\n- Two complete configuration slots A and B (full parameter ValueTree / APVTS snapshot plus any profile/tuning indices already owned by StateManager)\n- activeSlot getter/setter; switchActiveSlot(A|B) prepares a short click-safe crossfade request (fade length constant, e.g. 3\u201310 ms worth of samples at current SR stored as pending envelope metadata \u2014 ChugGateAudioProcessor will consume it later in j.4)\n- copyAtoB() / copyBtoA() / copyActiveToOther()\n- compare-friendly accessors so GUI can show which slot is live without audio-thread allocations\n- Bypass policy helpers: click-free, latency-correct, state-preserving, automation-safe notes/APIs (e.g. setBypassPending, isBypassActive) that do not glitch by hard-muting mid-block in the StateManager itself\n- Persist both A and B slots plus active index in XML/ValueTree with existing schema_version field\n\nDo not modify PluginProcessor, PluginEditor, Profiles, presets, or CMakeLists in this task \u2014 j.4 wires crossfade into processBlock.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/StateManager.h and Source/StateManager.cpp define dual A/B configuration slots with active-slot selection",
+    "StateManager provides copy A\u2192B (and/or copy active\u2192other) APIs",
+    "StateManager exposes click-safe crossfade switch request metadata for the processor to apply later",
+    "StateManager persists both A and B slots and active index with schema_version",
+    "StateManager provides bypass helper APIs documented as click-free, latency-correct, and state-preserving",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/StateManager.h",
+    "Source/StateManager.cpp"
+  ],
+  "forbidden_changes": [
+    "modify Source/PluginProcessor.cpp or Source/PluginEditor.cpp",
+    "modify Source/Profiles.* or Source/TuningProfiles.*",
+    "modify CMakeLists.txt",
+    "modify Resources/Presets/*",
+    "modify tests/*",
+    "introduce network/cloud preset backends",
+    "remove schema_version from saved state"
+  ],
+  "allowed_symbols": [
+    "StateManager",
+    "switchActiveSlot",
+    "copyAtoB",
+    "copyBtoA",
+    "copyActiveToOther",
+    "getActiveSlot",
+    "setBypassPending",
+    "isBypassActive",
+    "getCrossfadeSamplesRemaining"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "store A/B as juce::ValueTree snapshots",
+      "expose crossfade remaining samples as atomic/int for audio thread",
+      "keep fade length as a named constant"
+    ],
+    "forbidden": [
+      "implement processBlock audio crossfade inside StateManager",
+      "rewrite entire state schema to a non-versioned format",
+      "own GUI header preset browser"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

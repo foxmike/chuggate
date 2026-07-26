@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "task_id": "f.4",
+  "phase": "F",
+  "phase_id": "f",
+  "title": "Topology selector, processBlock wiring, crossfade, CMakeLists",
+  "description": "Be the sole PluginProcessor + CMakeLists.txt owner for phase F. Wire CrossoverSplitter, MultibandGate, and HissCurtain into prepare/process with a spectral topology selector and state-safe topology crossfade; register new sources and MultibandGateTests.\n\nBefore editing, inspect:\n- Source/PluginProcessor.h/.cpp existing phase E signal order (key \u2192 delay \u2192 detector \u2192 guards \u2192 state \u2192 gain)\n- Source/DSP/CrossoverSplitter.*, MultibandGate.*, HissCurtain.* public APIs from f.1\u2013f.3\n- .abracapocus/CHUGGATE_SPEC.md \u00a72.2 topologies, \u00a73 signal flow Spectral Split stage, \u00a714\u201316, and \u00a728-ish param smoothing note: mode/topology changes use state-safe crossfade ~5\u201330 ms\n- Source/ParameterIDs.h for global.topology, crossover, hissCurtain.*, per-band controls\n- Existing CMakeLists.txt target_sources / test registration patterns from prior phases\n\nPluginProcessor wiring (realtime-safe):\n- Members: CrossoverSplitter, MultibandGate, HissCurtain plus any small crossfade/dry wet helpers. Preallocate temp band/dry buffers in prepare only.\n- Topology selector (Full Band / Dual Band / Tri Band / Hiss Curtain):\n  - Full Band: bypass splitter; single-band MultibandGate or existing broadband gain path with MultibandGate numBands=1\n  - Dual: TwoWay splitter + MultibandGate 2 bands\n  - Tri: ThreeWay splitter + MultibandGate 3 bands\n  - Hiss Curtain: activate HissCurtain on the (post-gain or pre-gain) main path; document order relative to broadband gate \u2014 prefer apply curtain on open/sustaining audio after main gain law or as the spectral stage\u2019s replacement path\n- processBlock conceptual spectral stage after existing detector/state-derived targets are available:\n  1) Read topology + crossover + per-band floor/tau + hiss curtain params from APVTS (ParameterIDs) or safe defaults\n  2) Split if Dual/Tri; compute/apply MultibandGate targets (from existing envelope/threshold path and per-band offsets if present; else flattarget from current broadband gate gain distributed/adjusted)\n  3) HissCurtain path when selected: feed SNR_H from high-band or detector HF metric if available, else broadband envelope residual heuristic documented in code\n  4) Topology changes: equal-power or linear crossfade 5\u201330 ms between previous and new topology outputs so transitions do not click (risk_notes). Never hard-switch mid-block without fade.\n- prepareToPlay: prepare splitter/gate/curtain and fade buffers at SR/maxBlock/channel count. reset() clears filter and fade state.\n- No editor/GUI work. No reimplementation of LR4/TPT/gain-math beyond calling unit APIs.\n\nCMakeLists.txt (phase-F sole owner):\n- Add CrossoverSplitter.cpp, MultibandGate.cpp, HissCurtain.cpp to plugin/library target_sources\n- Register tests/MultibandGateTests.cpp on the existing test executable/target (body filled in f.5)\n- Additive only \u2014 do not restructure unrelated targets\n\nDo NOT implement test bodies (f.5). Do NOT rewrite DSP unit sources owned by f.1\u2013f.3.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/PluginProcessor.h/.cpp construct and prepare CrossoverSplitter, MultibandGate, and HissCurtain",
+    "processBlock topology selector supports Full Band, Dual Band, Tri Band, and Hiss Curtain paths",
+    "Full Band bypasses spectral split; Dual/Tri engage CrossoverSplitter + MultibandGate; Hiss Curtain engages HissCurtain",
+    "Topology changes crossfade over approximately 5\u201330 ms without hard clicks",
+    "CMakeLists.txt lists CrossoverSplitter.cpp, MultibandGate.cpp, and HissCurtain.cpp",
+    "CMakeLists.txt registers tests/MultibandGateTests.cpp on the test target",
+    "No heap allocation introduced on the audio path after prepareToPlay",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/PluginProcessor.h",
+    "Source/PluginProcessor.cpp",
+    "CMakeLists.txt"
+  ],
+  "forbidden_changes": [
+    "modify Source/DSP/CrossoverSplitter.*",
+    "modify Source/DSP/MultibandGate.*",
+    "modify Source/DSP/HissCurtain.*",
+    "implement tests/MultibandGateTests.cpp bodies",
+    "restructure unrelated CMake targets",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread"
+  ],
+  "allowed_symbols": [
+    "ChugGateAudioProcessor",
+    "prepareToPlay",
+    "processBlock",
+    "releaseResources",
+    "crossoverSplitter",
+    "multibandGate",
+    "hissCurtain",
+    "topologyCrossfade"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "add member instances and includes for phase F DSP units on PluginProcessor",
+      "implement 5\u201330 ms equal-power or linear topology crossfade with preallocated dry/wet buffers",
+      "read existing APVTS parameters by ParameterIDs when available, else temporary defaults",
+      "add CMake target_sources entries for phase F DSP units and MultibandGateTests",
+      "derive MultibandGate targets from existing broadband gate gain plus per-band offsets when full per-band detectors are not yet present"
+    ],
+    "forbidden": [
+      "reimplement LR4, MultibandGate smoothing math, or TPT curtain math inside PluginProcessor",
+      "own or rewrite CrossoverSplitter/MultibandGate/HissCurtain source files",
+      "expand scope into Performance Timeline GUI or rejected-signal audition UI",
+      "hard-switch topology mid-buffer without crossfade"
+    ]
+  },
+  "dependencies": [
+    "f.1",
+    "f.2",
+    "f.3"
+  ],
+  "task_timeout_seconds": 1200,
+  "verification_commands": []
+}

@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "task_id": "j.4",
+  "phase": "J",
+  "phase_id": "j",
+  "title": "Preset browser, audition GUI wiring, Processor/Editor/CMakeLists integration",
+  "description": "Fan-in phase owner: wire Profiles/Tuning, factory presets, A/B crossfade/bypass, rejected-signal audition, and CMake sources into PluginProcessor and PluginEditor (CHUGGATE_SPEC.md \u00a720.5, \u00a721.3 header, \u00a722\u2013\u00a725).\n\nBefore editing, inspect:\n- Source/Profiles.* and Source/TuningProfiles.* from j.1\n- Source/StateManager.* A/B/crossfade APIs from j.2\n- Resources/Presets/*.json from j.3 and StateManager factory loader\n- Source/PluginProcessor.cpp processBlock / APVTS / getStateInformation paths\n- Source/PluginEditor.cpp and Source/GUI/MainHeader.* for existing preset/profile/A/B placeholders\n- Source/GUI/DiagnosePage.* for rejected-signal audition controls if stubbed\n- Source/ParameterIDs.h audition rejectedMode and stateFilterMode IDs\n- CMakeLists.txt target_sources patterns from prior phases\n\nPluginProcessor.cpp (sole processor owner this phase):\n- Register/use Profiles + TuningProfiles when profile/tuning parameters change (message thread) without audio-thread allocations\n- Consume StateManager crossfade metadata in processBlock: click-safe equal-power or linear crossfade when switching A/B; apply click-free latency-correct bypass path (dry aligned to plugin latency)\n- Rejected-signal audition (r = x - y topology appropriate): honor rejectedMode (off/all/fullBand/weight/voice/hiss/hissCurtain/noiseModel/key) and stateFilterMode (off/hold/sustain/release/closed) so only matching rejected material is heard when auditioning\n- Load factory preset from Resources when StateManager/header requests; apply through APVTS safely\n- Ensure Profiles.cpp and TuningProfiles.cpp are available via CMake (below)\n\nPluginEditor.cpp (+ header widgets only as already owned paths allow):\n- Preset browser in header: list factory presets by category, load on selection, indication of dirty/user state if already patterned\n- Profile selector bound to profile parameter / Profiles catalog\n- A/B buttons: switch, copy A\u2192B using StateManager\n- Wire rejected-signal audition controls on Diagnose (or menu) to audition parameters; clear indication that output is audition/bypass of wet when listening rejected\n- Do not redesign full LookAndFeel; only wire missing callbacks/components into existing shell\n\nCMakeLists.txt (sole owner this phase):\n- Add Source/Profiles.cpp and Source/TuningProfiles.cpp to plugin and test targets as needed\n- Ensure Resources/Presets are installed/copied or listed for standalone discovery if the project already has a resources pattern; minimal additive lines only\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/PluginProcessor.cpp applies profile/tuning defaults when those parameters change",
+    "Source/PluginProcessor.cpp implements click-safe A/B crossfade using StateManager switch metadata",
+    "Source/PluginProcessor.cpp implements click-free latency-correct bypass path",
+    "Source/PluginProcessor.cpp routes rejected-signal audition according to rejectedMode and stateFilterMode parameter IDs",
+    "Source/PluginEditor.cpp wires preset browser, profile selector, and A/B controls to StateManager/Profiles/factory presets",
+    "CMakeLists.txt lists Profiles.cpp and TuningProfiles.cpp on the plugin and/or test targets",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/PluginProcessor.cpp",
+    "Source/PluginEditor.cpp",
+    "CMakeLists.txt"
+  ],
+  "forbidden_changes": [
+    "rewrite Profiles or TuningProfiles algorithms beyond include/wire usage",
+    "rewrite StateManager A/B internals (call public APIs only)",
+    "edit factory preset JSON contents",
+    "modify tests/StateTests.cpp",
+    "restructure unrelated CMake targets beyond additive source/resource lines",
+    "add network services"
+  ],
+  "allowed_symbols": [
+    "ChugGateAudioProcessor",
+    "ChugGateAudioProcessorEditor",
+    "processBlock",
+    "applyProfileDefaults",
+    "applyTuningAdjustments",
+    "switchActiveSlot",
+    "copyAtoB",
+    "loadFactoryPreset"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "apply short equal-power or linear A/B crossfade envelope in processBlock",
+      "audition by swapping output buffer to residual when rejectedMode != off",
+      "minimal editor callback wiring without new multi-file GUI framework"
+    ],
+    "forbidden": [
+      "move parameter inventory ownership out of ParameterIDs",
+      "delete existing GUI pages from prior phases",
+      "introduce a second state serializer parallel to StateManager"
+    ]
+  },
+  "dependencies": [
+    "j.1",
+    "j.2",
+    "j.3"
+  ],
+  "task_timeout_seconds": 1200,
+  "verification_commands": []
+}

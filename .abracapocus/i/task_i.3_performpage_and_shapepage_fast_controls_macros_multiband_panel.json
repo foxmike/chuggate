@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "task_id": "i.3",
+  "phase": "I",
+  "phase_id": "i",
+  "title": "PerformPage and ShapePage \u2014 fast controls, macros, multiband panel",
+  "description": "Implement Perform and Shape editor pages with APVTS-bound controls (spec \u00a721.4\u201321.6).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a721.4 Views (Perform, Shape), \u00a721.5 Performance Page Controls, \u00a721.6 Expert Inspector\n- .abracapocus/CHUGGATE_SPEC.md \u00a726 Parameter Ranges and \u00a727.1 Stable Parameter IDs\n- Source/ParameterIDs.h for exact param ID strings\n- Source/GUI/ChugLookAndFeel.h from i.1\n- How sibling plugins attach sliders (AudioProcessorValueTreeState::SliderAttachment / ComboBoxAttachment patterns)\n\nImplement PerformPage.h/.cpp:\n- juce::Component hosting fast controls: Threshold, Tightness macro, Sustain macro, Hiss macro, Depth (broadband floor), Attack Guard, mode selector, topology selector, key source, lookahead, Learn Noise and Align DI action buttons (buttons may fire std::function / listener hooks set by editor \u2014 do not implement Learn/Align DSP here).\n- Macro knobs should be primary; optional collapsible Expert Inspector row can surface mapped underlying params beneath macros (no hidden parameters when expanded).\n- Construct with APVTS reference; own attachments for every bound control.\n\nImplement ShapePage.h/.cpp:\n- juce::Component for spectral topology shaping: full / dual / tri / Hiss Curtain selectors and related crossover + per-band floor/threshold-offset/release-multiplier controls, hissCurtain min/max/depth.\n- Multiband panel layout that remains readable at min editor width (~920).\n- APVTS attachments only; no processBlock or CMake edits.\n\nLayouts use ChugLookAndFeel when set by parent. Leave space/comments for PerformanceTimeline embedding by i.6 if timeline is not a child of this page (Perform may include a timeline mount Component placeholder or simply arrange control grid \u2014 editor owns final placement).\n\nDo NOT implement Detect/Align/Diagnose pages, MainHeader, PluginEditor, or CMakeLists.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/GUI/PerformPage.h and Source/GUI/PerformPage.cpp exist",
+    "Source/GUI/ShapePage.h and Source/GUI/ShapePage.cpp exist",
+    "PerformPage binds Threshold, Tightness, Sustain, Hiss, Depth, Attack Guard, mode, topology, key source, and lookahead controls to APVTS ParameterIDs",
+    "PerformPage exposes Learn Noise and Align DI action hooks/buttons without implementing DSP",
+    "ShapePage exposes topology/crossover/per-band and Hiss Curtain controls bound to APVTS ParameterIDs",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/GUI/PerformPage.h",
+    "Source/GUI/PerformPage.cpp",
+    "Source/GUI/ShapePage.h",
+    "Source/GUI/ShapePage.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginEditor.*",
+    "modify Source/PluginProcessor.*",
+    "modify Source/ParameterIDs.h",
+    "modify Source/GUI/ChugLookAndFeel.*",
+    "implement DetectPage/AlignPage/DiagnosePage/MainHeader/PerformanceTimeline/StateIndicator",
+    "add non-JUCE third-party dependencies",
+    "change DSP algorithms or parameter ranges in processor code"
+  ],
+  "allowed_symbols": [
+    "PerformPage",
+    "ShapePage",
+    "resized",
+    "paint",
+    "setLearnNoiseHandler",
+    "setAlignDiHandler"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use APVTS SliderAttachment/ComboBoxAttachment/ButtonAttachment",
+      "group macro knobs with optional expert inspector expand row",
+      "use FlexBox or manual bounds for min-size-friendly layout"
+    ],
+    "forbidden": [
+      "own tabbed editor shell or CMakeLists",
+      "hard-code parameter IDs that disagree with ParameterIDs.h",
+      "implement noise learn or DI calibration algorithms on the page"
+    ]
+  },
+  "dependencies": [
+    "i.1"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

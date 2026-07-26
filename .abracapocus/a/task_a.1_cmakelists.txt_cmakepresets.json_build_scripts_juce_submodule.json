@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "task_id": "a.1",
+  "phase": "A",
+  "phase_id": "a",
+  "title": "CMakeLists.txt, CMakePresets.json, build scripts, JUCE submodule",
+  "description": "Create the ChugGate JUCE plugin build scaffold only.\n\nBefore editing, inspect:\n- /home/mike/dev/mike/music/plugins/shredboost/CMakeLists.txt\n- /home/mike/dev/mike/music/plugins/shredspace/CMakeLists.txt\n- /home/mike/dev/mike/music/plugins/shredboost/CMakePresets.json\n- /home/mike/dev/mike/music/plugins/shredboost/scripts/build_all.sh\n- /home/mike/dev/mike/music/plugins/chuggate/.abracapocus/CHUGGATE_SPEC.md (I/O, formats)\n\nImplement:\n1. CMakeLists.txt: cmake_minimum_required 3.22; project(ChugGate VERSION 1.0.0); C++20; optional CHUGGATE_CONFIGURE_ONLY early-return like ShredBoost; require JUCE/CMakeLists.txt present; add_subdirectory(JUCE); juce_add_plugin(ChugGate) with PRODUCT_NAME ChugGate, COMPANY_NAME \"nSpace Systems\", VERSION 1.0.0, PLUGIN_MANUFACTURER_CODE NSPC, PLUGIN_CODE ChGt, BUNDLE_ID com.nspacesystems.chuggate, FORMATS VST3 Standalone only (no LV2 required this phase), IS_SYNTH FALSE, NEEDS_MIDI_INPUT/OUTPUT FALSE, COPY_PLUGIN_AFTER_BUILD TRUE or match ShredBoost convention.\n2. target_sources initially listing Source/PluginProcessor.cpp and Source/PluginEditor.cpp even if stubs land in later tasks; enable_testing and a minimal placeholder unit-test executable wiring tests/TestMain.cpp for later fill-in.\n3. Compile defs: JUCE_WEB_BROWSER=0, JUCE_USE_CURL=0, JUCE_VST3_CAN_REPLACE_VST2=0, JUCE_DISPLAY_SPLASH_SCREEN=0.\n4. Link juce::juce_audio_utils and juce::juce_dsp plus recommended flags.\n5. CMakePresets.json with linux-release (Unix Makefiles, build/linux-release, Release) and windows-msvc presets mirroring ShredBoost.\n6. scripts/build_all.sh: set -euo pipefail; cmake --preset linux-release; cmake --build build/linux-release --config Release.\n7. .gitmodules + JUCE git submodule entry pointing at the same JUCE upstream used by sibling plugins (or document path). Do not implement DSP or full ParameterIDs here.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "CMakeLists.txt exists and defines project(ChugGate) with juce_add_plugin targeting VST3 and Standalone",
+    "CMakeLists.txt uses COMPANY_NAME nSpace Systems, PLUGIN_MANUFACTURER_CODE NSPC, PLUGIN_CODE ChGt, BUNDLE_ID com.nspacesystems.chuggate",
+    "CMakePresets.json exists with linux-release and windows-msvc configure presets",
+    "scripts/build_all.sh exists, is executable-style bash, and invokes cmake --preset linux-release",
+    ".gitmodules exists and declares a JUCE submodule",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "CMakeLists.txt",
+    "CMakePresets.json",
+    "scripts/build_all.sh",
+    ".gitmodules"
+  ],
+  "forbidden_changes": [
+    "implement DSP algorithms",
+    "modify Source/ParameterIDs.h",
+    "modify Source/PluginProcessor.* beyond what is required by CMake target_sources listing",
+    "modify Source/PluginEditor.*",
+    "modify Source/StateManager.*",
+    "add third-party dependencies other than JUCE submodule",
+    "add LV2 format requirement unless already present in sibling convention notes"
+  ],
+  "allowed_symbols": [
+    "ChugGate",
+    "juce_add_plugin"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "mirror ShredBoost/ShredSpace CMake structure",
+      "use PLUGIN_CODE ChGt and BUNDLE_ID com.nspacesystems.chuggate",
+      "include configure-only option and minimal test executable target stub"
+    ],
+    "forbidden": [
+      "change manufacturer code away from NSPC",
+      "introduce non-JUCE build systems",
+      "implement audio processing logic in CMake task"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

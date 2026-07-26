@@ -1,0 +1,125 @@
+{
+  "verification": {
+    "checks": [
+      {
+        "name": "analysis-fifo-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/Analysis/AnalysisFifo.cpp"
+        ]
+      },
+      {
+        "name": "performance-history-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/Analysis/PerformanceHistory.cpp"
+        ]
+      },
+      {
+        "name": "noise-fingerprint-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/Analysis/NoiseFingerprint.cpp"
+        ]
+      },
+      {
+        "name": "alignment-scope-data-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/Analysis/AlignmentScopeData.cpp"
+        ]
+      },
+      {
+        "name": "attack-integrity-analyzer-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/Analysis/AttackIntegrityAnalyzer.cpp"
+        ]
+      },
+      {
+        "name": "tail-integrity-analyzer-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/Analysis/TailIntegrityAnalyzer.cpp"
+        ]
+      },
+      {
+        "name": "analysis-tests-present",
+        "command": [
+          "test",
+          "-f",
+          "tests/AnalysisTests.cpp"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-analysis-fifo",
+        "command": [
+          "grep",
+          "-q",
+          "AnalysisFifo.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-performance-history",
+        "command": [
+          "grep",
+          "-q",
+          "PerformanceHistory.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-noise-fingerprint",
+        "command": [
+          "grep",
+          "-q",
+          "NoiseFingerprint.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-alignment-scope-data",
+        "command": [
+          "grep",
+          "-q",
+          "AlignmentScopeData.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-attack-integrity",
+        "command": [
+          "grep",
+          "-q",
+          "AttackIntegrityAnalyzer.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-tail-integrity",
+        "command": [
+          "grep",
+          "-q",
+          "TailIntegrityAnalyzer.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-analysis-tests",
+        "command": [
+          "grep",
+          "-q",
+          "AnalysisTests.cpp",
+          "CMakeLists.txt"
+        ]
+      }
+    ]
+  }
+}

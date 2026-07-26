@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "task_id": "d.1",
+  "phase": "D",
+  "phase_id": "d",
+  "title": "AttackGuard \u2014 transient detection, false-trigger protection",
+  "description": "Implement Source/DSP/AttackGuard as a real-time-safe pick-attack / transient detector with false-trigger protection (no allocations/locks/logging on the process path).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md section 8 (band-limited transient detection, false-trigger protection, controls)\n- Source/ParameterIDs.h AttackGuard-related IDs from phase A if present (enabled, amount, sensitivity, frequency, decay, softNoteAssist, maxThresholdReduction, confirmationWindow)\n- Source/DSP/DetectorEngine.* and PerformanceStateMachine.* public APIs for the L[n] / open-score surfaces this unit will later feed\n- Existing Source/DSP/ header style (prepare/reset/process)\n\nImplement AttackGuard.h/.cpp per spec \u00a78:\n- Band-limited high-pass (or emphasis) on the mono key/input path, then finite difference:\n  d[n] = x_HP[n] - x_HP[n-1]\n  T[n] = max(|d[n]|, alpha_t * T[n-1])  (alpha_t from decay control)\n  O[n] = L[n] + G_t * clamp((T[n] - T0) / (T1 - T0), 0, 1)\n  where G_t is scaled by amount/sensitivity/maxThresholdReduction and L[n] is the detector level (dB or linear consistently with DetectorEngine consumers).\n- Temporarily lower effective opening threshold / raise open score for detected pick events; expose thresholdReductionDb (or equivalent delta applied toward T_open) and openAssistScore.\n- False-trigger protection (\u00a78.3): a valid attack requires BOTH transient evidence AND minimum body energy within a short confirmation window (confirmationWindow). Reject cable clicks, single-sample spikes, and digital discontinuities \u2014 do not assert validAttack on impulse-only energy without body.\n- Controls / setters: enabled, amount, sensitivity, frequency emphasis, decay, soft-note assist, maximum threshold reduction, confirmation window.\n- prepare(sampleRate)/reset(); process mono key (and/or current L) sample- or block-wise \u2192 validAttack flag, transient strength, threshold reduction, assisted open score. Realtime-safe fixed storage only.\n\nDo NOT implement FundamentalEstimator, SustainAnalyzer, or FeedbackDetector. Do NOT edit PerformanceStateMachine, PluginProcessor, or CMakeLists.txt (d.4 owns integration). Do NOT write tests (d.5).\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/AttackGuard.h and Source/DSP/AttackGuard.cpp exist",
+    "AttackGuard implements band-limited transient envelope T[n] = max(|d[n]|, alpha_t * T[n-1]) with d[n] = x_HP[n] - x_HP[n-1]",
+    "AttackGuard computes open assist O[n] = L[n] + G_t * clamp((T[n]-T0)/(T1-T0), 0, 1) and exposes threshold-reduction / open-assist outputs",
+    "Valid attack requires transient evidence AND minimum body energy inside the confirmation window (false-trigger protection)",
+    "AttackGuard exposes setters for enabled, amount, sensitivity, frequency emphasis, decay, soft-note assist, max threshold reduction, and confirmation window",
+    "No heap allocation in the per-block process path",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/AttackGuard.h",
+    "Source/DSP/AttackGuard.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/PerformanceStateMachine.*",
+    "modify Source/DSP/FundamentalEstimator.*",
+    "modify Source/DSP/SustainAnalyzer.*",
+    "modify Source/DSP/FeedbackDetector.*",
+    "implement tests/AttackGuardTests.cpp or tests/SustainTests.cpp",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread"
+  ],
+  "allowed_symbols": [
+    "AttackGuard",
+    "prepare",
+    "reset",
+    "process",
+    "setEnabled",
+    "setAmount",
+    "setSensitivity",
+    "setFrequencyEmphasis",
+    "setDecay",
+    "setSoftNoteAssist",
+    "setMaxThresholdReduction",
+    "setConfirmationWindow",
+    "isValidAttack",
+    "getTransientStrength",
+    "getThresholdReductionDb",
+    "getOpenAssistScore"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use plain C++20 + JUCE types already in the project",
+      "fixed-size delay/HP filter state owned by AttackGuard",
+      "accept mono key samples and detector L as process inputs"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt target_sources",
+      "implement FundamentalEstimator, SustainAnalyzer, or FeedbackDetector",
+      "full onset tracker / YIN / note tracking"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

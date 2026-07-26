@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "task_id": "d.2",
+  "phase": "D",
+  "phase_id": "d",
+  "title": "FundamentalEstimator \u2014 bounded autocorrelation, confidence, control-rate",
+  "description": "Implement Source/DSP/FundamentalEstimator as a lightweight, real-time-safe f0 estimator for harmonicity (not full pitch tracking).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md sections 9.2 and 10.2 (harmonicity and feedback scores that consume f0)\n- Phase D skeleton note: bounded autocorrelation or harmonic product spectrum; does NOT need full YIN/note tracking (ShredEQ territory)\n- Existing Source/DSP/ prepare/reset/process conventions and any DetectorEngine rates for control-rate alignment\n\nImplement FundamentalEstimator.h/.cpp:\n- Algorithm: bounded autocorrelation OR small fixed-size harmonic product spectrum / fixed DFT window (no FFTW, no dynamic FFT size growth). Prefer fixed buffers sized at prepare.\n- Guitar/bass-useful f0 search band (e.g. ~40 Hz\u2013~800 Hz or documented constants) with explicit min/max period bounds for ACF.\n- Output snapshot each successful estimate:\n  - estimatedFundamental (Hz)\n  - confidence in [0,1]\n  - timestamp (sample time or seconds since prepare \u2014 document in header)\n  - validity bool (false when silence, low energy, or ambiguous peaks)\n- Runs at decimated control rate: accumulate/process every N samples or on a control hop; process path may accept block audio and only update the snapshot on hop boundaries. Audio-thread safe: no heap alloc, no locks, no logging.\n- prepare(sampleRate, maxBlockSize)/reset(); push/process mono key or main mono; getters for the latest snapshot.\n\nDo NOT implement SustainAnalyzer or FeedbackDetector (they depend on this API in d.3). Do NOT edit PerformanceStateMachine, PluginProcessor, or CMakeLists.txt. Do NOT write tests (d.5).\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/FundamentalEstimator.h and Source/DSP/FundamentalEstimator.cpp exist",
+    "FundamentalEstimator uses bounded autocorrelation or fixed-size HPS/DFT (no full YIN / no unbounded FFT)",
+    "FundamentalEstimator produces estimatedFundamental, confidence, timestamp, and validity on its estimate snapshot",
+    "Estimation runs at a decimated control rate (not mandatory per-sample f0 updates)",
+    "Invalid/low-energy input yields validity=false (or confidence near zero) without crashing",
+    "No heap allocation in the per-block process path",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/FundamentalEstimator.h",
+    "Source/DSP/FundamentalEstimator.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/PerformanceStateMachine.*",
+    "modify Source/DSP/AttackGuard.*",
+    "modify Source/DSP/SustainAnalyzer.*",
+    "modify Source/DSP/FeedbackDetector.*",
+    "implement full YIN or polyphonic note tracking",
+    "add FFTW or other non-JUCE third-party dependencies",
+    "allocate on the audio/process thread"
+  ],
+  "allowed_symbols": [
+    "FundamentalEstimator",
+    "FundamentalEstimate",
+    "prepare",
+    "reset",
+    "process",
+    "getEstimate",
+    "getEstimatedFundamental",
+    "getConfidence",
+    "getTimestamp",
+    "isValid",
+    "setControlHop"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use plain C++20 + JUCE types already in the project",
+      "fixed-size analysis window and hop chosen at prepare",
+      "bounded ACF peak pick or small fixed HPS magnitude product"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt target_sources",
+      "implement SustainAnalyzer or FeedbackDetector in this task",
+      "dynamic heap buffers on the audio thread"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

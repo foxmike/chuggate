@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "task_id": "c.3",
+  "phase": "C",
+  "phase_id": "c",
+  "title": "processBlock wiring \u2014 detector \u2192 state machine \u2192 gain \u2192 output, CMakeLists",
+  "description": "Be the sole PluginProcessor + CMakeLists.txt owner for phase C. Wire detector \u2192 PerformanceStateMachine \u2192 GainComputer \u2192 GainSmoother \u2192 dry audio multiply (full-band first), and register new DSP/test sources.\n\nBefore editing, inspect:\n- Source/PluginProcessor.h/.cpp prepareToPlay/processBlock and any phase-B key/detector members already present\n- Source/DSP/PerformanceStateMachine.*, GainComputer.*, GainSmoother.*, DetectorEngine.* public prepare/process APIs\n- Existing CMakeLists.txt target_sources / test target patterns from phases A\u2013B\n- .abracapocus/CHUGGATE_SPEC.md sections 7, 15, 16 for the intended signal path order\n\nWiring requirements:\n- In prepareToPlay/reset paths: prepare PerformanceStateMachine, GainComputer, GainSmoother (and existing DetectorEngine/key path if already members) at the block sample rate.\n- In processBlock (realtime-safe):\n  1) Build/use mono key / detector level L (reuse DetectorEngine from phase B when available; if detector is not yet a member, instantiate/use DetectorEngine locally on the main input as a minimal stand-in \u2014 do not reimplement peak/RMS math inline).\n  2) Advance PerformanceStateMachine from L (+ defaults for transient/sustain until later phases).\n  3) Compute target gain G* via GainComputer from L/state/certainty and APVTS-linked threshold/floor/ratio/gamma/mode when parameter IDs exist; otherwise use clear member defaults.\n  4) Smooth via GainSmoother open/close taus.\n  5) Apply smoothed broadband gain to main output channels (in-place). Leave sidechain bus un-gained. Preserve existing bus layout.\n- Expose enough state (current PerformanceState / last gain) for later GUI/timeline endpoints without building the editor.\n\nCMakeLists.txt (phase-C sole owner):\n- Add PerformanceStateMachine.cpp, GainComputer.cpp, GainSmoother.cpp to the plugin/library target_sources\n- Register tests/StateMachineTests.cpp on the existing test executable/target (body filled in c.4)\n- Additive only \u2014 do not restructure unrelated targets or rewrite phase A/B source lists beyond necessary additions\n\nDo NOT implement tests/StateMachineTests.cpp body (c.4). Do NOT edit the DSP unit sources except include usage from the processor. Do NOT implement Pick Attack Guard, Sustain Intelligence, multiband crossovers, or the Performance Timeline GUI.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/PluginProcessor.h/.cpp construct and prepare PerformanceStateMachine, GainComputer, and GainSmoother",
+    "processBlock advances detector level into PerformanceStateMachine then GainComputer then GainSmoother before applying gain to main output",
+    "Main output audio is multiplied by the smoothed broadband gate/expansion gain; sidechain bus is not overwritten as the gated main path",
+    "CMakeLists.txt lists PerformanceStateMachine.cpp, GainComputer.cpp, and GainSmoother.cpp on the plugin/library target",
+    "CMakeLists.txt registers tests/StateMachineTests.cpp on the test target",
+    "processBlock path performs no heap allocation attributable to this wiring",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/PluginProcessor.h",
+    "Source/PluginProcessor.cpp",
+    "CMakeLists.txt"
+  ],
+  "forbidden_changes": [
+    "modify Source/DSP/PerformanceStateMachine.*",
+    "modify Source/DSP/GainComputer.*",
+    "modify Source/DSP/GainSmoother.*",
+    "modify Source/DSP/DetectorEngine.*",
+    "implement tests/StateMachineTests.cpp body",
+    "implement PluginEditor Performance Timeline UI",
+    "implement multiband crossovers or Hiss Curtain",
+    "add non-JUCE third-party dependencies",
+    "rewrite entire CMake project structure"
+  ],
+  "allowed_symbols": [
+    "ChugGateAudioProcessor",
+    "prepareToPlay",
+    "releaseResources",
+    "processBlock",
+    "PerformanceStateMachine",
+    "GainComputer",
+    "GainSmoother",
+    "DetectorEngine"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "add member instances and includes for phase C DSP units on PluginProcessor",
+      "read existing APVTS parameters by ParameterIDs when available, else temporary defaults",
+      "add CMake target_sources entries for phase C DSP units and StateMachineTests.cpp",
+      "full-band gain apply only (multiband split deferred)"
+    ],
+    "forbidden": [
+      "reimplement gate laws inside PluginProcessor instead of calling GainComputer/GainSmoother",
+      "own or rewrite PerformanceStateMachine/GainComputer/GainSmoother source files",
+      "expand scope into Pick Attack Guard, Sustain Intelligence, Feedback Friend, or GUI timeline"
+    ]
+  },
+  "dependencies": [
+    "c.1",
+    "c.2"
+  ],
+  "task_timeout_seconds": 1200,
+  "verification_commands": []
+}

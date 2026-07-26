@@ -1,0 +1,59 @@
+{
+  "schema_version": 1,
+  "task_id": "e.5",
+  "phase": "E",
+  "phase_id": "e",
+  "title": "Cadence, noise learn, and alignment tests",
+  "description": "Add focused Catch2 (or existing project test harness) unit tests covering CadenceTracker, NoiseFloorEstimator, AlignmentAnalyzer, and FractionalDelay.\n\nBefore editing, inspect:\n- tests/TestMain.cpp and existing tests/* patterns from prior phases\n- Source/DSP/CadenceTracker.*, NoiseFloorEstimator.*, AlignmentAnalyzer.*, FractionalDelay.* public APIs\n- .abracapocus/CHUGGATE_SPEC.md sections 11\u201313 formulas under test\n- CMakeLists.txt test target registration from e.4 (do not re-own CMake \u2014 prefer zero CMake edits)\n\nImplement tests/CadenceTests.cpp:\n1) Interval median: regularly spaced synthetic onsets yield I near the true spacing within a small tolerance; introduce one outlier interval and assert robust median stays near the regular spacing.\n2) Release constraint: with known I and factor c, tau_release_max = c*I and tau_release_eff = min(tau_manual, tau_release_max) for tau_manual above and below the cap.\n3) Mode Off: returns tau_manual unchanged / constraint inactive.\n4) Insufficient history: isEstimateValid false (or equivalent) until minimum onset count collected.\n5) NoiseFloorEstimator path in this file OR cross-included cases: idle noise capture produces floor below a louder tone; percentile floor rises when observation buffer is ivory-noise-floor elevated; applySuggestions does not run until explicitly called \u2014 assert hasSuggestions after learn and that getters for suggestions are populated; slow-adapt rejected when not closed / transient flag set (if exposed).\n\nImplement tests/AlignmentTests.cpp:\n1) FractionalDelay: impulse delayed by integer samples appears at expected index; fractional delay (e.g. 1.3 samples) produces interpolated energy spanning neighboring taps (Lagrange), not pure zeros.\n2) FractionalDelay: setDelayMs within \u00b125 ms at fs=48000 is stable and process of silence stays near zero after reset.\n3) AlignmentAnalyzer: synthetic key onset leading audio by a known sample offset yields recommended delay near that offset (sign per API: delay key when DI leads) within documented sample/ms tolerance after calibration/analysis call.\n4) Correlation confidence higher for clearly aligned repeated onsets than for uncorrelated noise pair fixtures.\n5) Calibration gate: recommended delay not committed until acceptAlignment (or equivalent) if API separates recommend vs accepted.\n\nKeep tests deterministic (fixed SR e.g. 48000, fixed lengths, explicit tolerances). No audio hardware. Noise-learn coverage may live primarily in CadenceTests.cpp alongside cadence cases if that matches CMake registration of only CadenceTests + AlignmentTests; ensure NoiseFloorEstimator is exercised in at least one registered test case.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "tests/CadenceTests.cpp exists and registers multiple test cases covering CadenceTracker",
+    "tests/CadenceTests.cpp or tests/AlignmentTests.cpp registers test cases covering NoiseFloorEstimator learn/percentile/suggestion behavior",
+    "tests/AlignmentTests.cpp exists and registers multiple test cases covering AlignmentAnalyzer and FractionalDelay",
+    "CadenceTracker tests assert robust median interval and tau_release_eff = min(tau_manual, c*I)",
+    "CadenceTracker tests assert Off mode leaves manual release unconstrained",
+    "NoiseFloorEstimator tests assert capture produces suggestions only after learn and floors respond to observation level",
+    "FractionalDelay tests assert integer delay placement and non-trivial fractional Lagrange interpolation behavior",
+    "AlignmentAnalyzer tests assert recovered delay near a known synthetic key-leads-audio offset within stated tolerance",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "pi_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "tests/CadenceTests.cpp",
+    "tests/AlignmentTests.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/DSP/* production DSP implementations except via test includes",
+    "modify Source/PluginProcessor.*",
+    "add non-JUCE third-party test frameworks not already used by the project",
+    "network access or non-deterministic timing assertions"
+  ],
+  "allowed_symbols": [
+    "CadenceTracker",
+    "NoiseFloorEstimator",
+    "AlignmentAnalyzer",
+    "FractionalDelay"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use the existing test framework from tests/TestMain.cpp",
+      "synthetic onset grids, noise floors, delayed impulses, and onset-pair fixtures at a fixed sample rate (e.g. 48000)",
+      "relative ms/sample/score tolerances rather than bit-exact equality",
+      "place NoiseFloorEstimator cases in CadenceTests.cpp if only two test files are registered"
+    ],
+    "forbidden": [
+      "reimplement DSP inside the test files",
+      "own CMakeLists.txt",
+      "require real audio hardware or host sidechain"
+    ]
+  },
+  "dependencies": [
+    "e.1",
+    "e.2",
+    "e.3"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": [],
+  "model": "openrouter/z-ai/glm-5.2"
+}

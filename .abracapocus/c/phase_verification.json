@@ -1,0 +1,74 @@
+{
+  "verification": {
+    "checks": [
+      {
+        "name": "performance-state-machine-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/PerformanceStateMachine.cpp"
+        ]
+      },
+      {
+        "name": "gain-computer-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/GainComputer.cpp"
+        ]
+      },
+      {
+        "name": "gain-smoother-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/GainSmoother.cpp"
+        ]
+      },
+      {
+        "name": "state-machine-tests-present",
+        "command": [
+          "test",
+          "-f",
+          "tests/StateMachineTests.cpp"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-state-machine-sources",
+        "command": [
+          "grep",
+          "-q",
+          "PerformanceStateMachine.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-gain-computer",
+        "command": [
+          "grep",
+          "-q",
+          "GainComputer.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-gain-smoother",
+        "command": [
+          "grep",
+          "-q",
+          "GainSmoother.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-state-machine-tests",
+        "command": [
+          "grep",
+          "-q",
+          "StateMachineTests.cpp",
+          "CMakeLists.txt"
+        ]
+      }
+    ]
+  }
+}

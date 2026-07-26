@@ -1,0 +1,55 @@
+{
+  "verification": {
+    "checks": [
+      {
+        "name": "key-source-router-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/KeySourceRouter.cpp"
+        ]
+      },
+      {
+        "name": "key-conditioner-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/KeyConditioner.cpp"
+        ]
+      },
+      {
+        "name": "powerline-shield-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/PowerlineShield.cpp"
+        ]
+      },
+      {
+        "name": "detector-engine-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/DetectorEngine.cpp"
+        ]
+      },
+      {
+        "name": "detector-tests-present",
+        "command": [
+          "test",
+          "-f",
+          "tests/DetectorTests.cpp"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-detector-sources",
+        "command": [
+          "grep",
+          "-q",
+          "DetectorEngine.cpp",
+          "CMakeLists.txt"
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "task_id": "c.4",
+  "phase": "C",
+  "phase_id": "c",
+  "title": "State machine transition and gain computation tests",
+  "description": "Add focused Catch2 (or existing project test harness) unit tests covering PerformanceStateMachine transitions/hysteresis/reopen and GainComputer/GainSmoother math.\n\nBefore editing, inspect:\n- tests/TestMain.cpp and any existing tests/* patterns from prior phases\n- Source/DSP/PerformanceStateMachine.*, GainComputer.*, GainSmoother.* public APIs\n- .abracapocus/CHUGGATE_SPEC.md sections 7, 15, 16 formulas under test\n- CMakeLists.txt test target registration from c.3 (do not re-own CMake \u2014 prefer zero CMake edits)\n\nImplement tests/StateMachineTests.cpp:\n1) Hysteresis: with fixed H, T_close == T_open - H; level above T_open enters open-family; level between T_close and T_open does not immediately force Closed after open; level below T_close after hold expiry allows Release/Closed path.\n2) Hold: when level drops below open threshold, machine enters/remains Hold until configured hold time elapses at the given sample rate.\n3) Reopen: during Release, a valid transient/reopen stimulus transitions to Reopen (or attack/open-family) without requiring a full return through Closed first.\n4) Soft decision: for L midpoint between T_close and T_open, smoothstep u\u22480.5 and S(u)\u22480.5 within stated tolerance.\n5) GainComputer hard/soft: high L \u2192 near-unity target (above floor); deep noise floor L \u2192 near g_floor; soft mode yields intermediate gains near the knee vs hard corners.\n6) Expander: for R=2, L = T - 6 dB, G_exp_dB matches max(G_floor_dB, (R-1)*(L-T)) within tolerance; linear gain matches 10^(G_dB/20).\n7) Curve shape: gamma=1 linear in S between floor and unity; gamma>1 pulls shaped gain lower for mid S than gamma=1 on the same S fixture.\n8) GainSmoother: step-up target uses open tau; step-down uses close tau \u2014 after equal sample counts with tau_close >> tau_open, downward wrap residual is larger (slower) than upward approach residual within a deterministic fixture.\n\nKeep tests deterministic (fixed SR, fixed lengths, explicit tolerances). No audio hardware.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "tests/StateMachineTests.cpp exists and registers multiple test cases for PerformanceStateMachine, GainComputer, and GainSmoother",
+    "tests assert T_close = T_open - H and dual-threshold open/hold/close behavior",
+    "tests assert Hold respects configured hold time before release/close progression",
+    "tests assert Reopen path activates from Release on valid reopen/transient stimulus",
+    "tests assert soft-decision smoothstep midpoint behavior within stated tolerance",
+    "tests assert GainComputer hard/soft floor/unity targets and expander G_exp_dB = max(G_floor_dB, (R-1)*(L-T))",
+    "tests assert curve-shape gamma and GainSmoother separate open/close time constants on step fixtures",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "pi_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "tests/StateMachineTests.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/DSP/* production DSP implementations except via test includes",
+    "modify Source/PluginProcessor.*",
+    "add non-JUCE third-party test frameworks not already used by the project",
+    "network access or non-deterministic timing assertions"
+  ],
+  "allowed_symbols": [
+    "PerformanceStateMachine",
+    "PerformanceState",
+    "GainComputer",
+    "GainSmoother"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use the existing test framework from tests/TestMain.cpp",
+      "synthetic level/step fixtures at a fixed sample rate (e.g. 48000)",
+      "relative dB/gain tolerances rather than bit-exact equality"
+    ],
+    "forbidden": [
+      "reimplement DSP inside the test file",
+      "own CMakeLists.txt",
+      "require real audio hardware or host sidechain"
+    ]
+  },
+  "dependencies": [
+    "c.1",
+    "c.2"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": [],
+  "model": "openrouter/z-ai/glm-5.2"
+}

@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "task_id": "f.5",
+  "phase": "F",
+  "phase_id": "f",
+  "title": "Multiband reconstruction, crossover, and Hiss Curtain tests",
+  "description": "Add focused Catch2 (or existing project harness) unit tests covering CrossoverSplitter complementary reconstruction, MultibandGate per-band smoothing/combine, and HissCurtain SNR\u2192cutoff behavior.\n\nBefore editing, inspect:\n- tests/TestMain.cpp and existing tests/* patterns from prior phases\n- Source/DSP/CrossoverSplitter.*, MultibandGate.*, HissCurtain.* public APIs\n- .abracapocus/CHUGGATE_SPEC.md \u00a714\u201316 and \u00a72.2 / \u00a730.5 reconstruction expectations (tolerance-based magnitude, not sample-identical)\n- CMakeLists.txt test registration from f.4 (do not re-own CMake \u2014 prefer zero CMake edits)\n\nImplement tests/MultibandGateTests.cpp:\n1) CrossoverSplitter two-way unity reconstruction: feed a broadband multi-sine or impulse train through two-way LR4 some mid crossover (e.g. 2.5 kHz at fs=48000); sum band outputs vs input and assert RMS magnitude error (or coherence) within a documented tolerance (e.g. < \u221240 dB relative RMS error across the block after settling). Do not require sample-identical equality.\n2) CrossoverSplitter three-way: same idea for three bands at valid f_low/f_high; assert ordered clamps reject inverted crossovers by leaving sorted edges.\n3) Click-free movement smoke: sweep crossover 2 kHz\u21926 kHz over N samples and assert peak sample-to-sample delta of the summed output stays below a generous bound vs a step-discontinuity baseline (or assert no NaNs/Inf and finite energy).\n4) MultibandGate smoothing: with constant band inputs x_b=1, step G_b* from 1\u2192floor and assert G_b follows open/close time constants (close tau slower/faster as set) \u2014 e.g. after ~1 tau not yet fully settled, after many tau near target; y = sum G_b x_b.\n5) MultibandGate mute/solo: solo band 0 forces other band contributions near zero.\n6) HissCurtain mapping: high SNR_H yields f_c near f_max; low SNR_H yields f_c near f_min; mid SNR near geometric midpoint on log scale within tolerance. depth=0 leaves output \u2248 input (RMS).\n7) HissCurtain stability: process a dial-tone or noise while modulating SNR; output finite, no NaNs.\n\nKeep tests deterministic (fixed SR 48000, fixed lengths, explicit tolerances). No audio hardware. Only write the MultibandGateTests.cpp file registered by f.4.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "tests/MultibandGateTests.cpp exists and registers multiple test cases",
+    "tests cover CrossoverSplitter two-way complementary reconstruction within a documented RMS/magnitude tolerance (not sample-identical)",
+    "tests cover CrossoverSplitter three-way path and crossover ordering protection",
+    "tests cover MultibandGate per-band open/close smoothing and sum recombination",
+    "tests cover MultibandGate mute/solo behavior",
+    "tests cover HissCurtain SNR\u2192log-domain cutoff mapping at high/low SNR and depth bypass",
+    "tests are deterministic with fixed sample rate and explicit numeric tolerances",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/z-ai/glm-5.2",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "tests/MultibandGateTests.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/CrossoverSplitter.*",
+    "modify Source/DSP/MultibandGate.*",
+    "modify Source/DSP/HissCurtain.*",
+    "add non-JUCE third-party dependencies",
+    "require bit-identical sample reconstruction as a pass condition"
+  ],
+  "allowed_symbols": [
+    "CrossoverSplitter",
+    "MultibandGate",
+    "HissCurtain"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use Catch2 TEST_CASE/SECTION style matching existing tests",
+      "use RMS/magnitude tolerances for complementary reconstruction",
+      "synthesize deterministic sines, impulses, and constant buffers as fixtures"
+    ],
+    "forbidden": [
+      "edit production DSP or PluginProcessor sources",
+      "re-own CMakeLists.txt test registration",
+      "depend on real-time audio devices or host plugins"
+    ]
+  },
+  "dependencies": [
+    "f.1",
+    "f.2",
+    "f.3",
+    "f.4"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

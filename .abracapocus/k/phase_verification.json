@@ -1,0 +1,104 @@
+{
+  "verification": {
+    "checks": [
+      {
+        "name": "validate-script-present",
+        "command": [
+          "test",
+          "-f",
+          "scripts/validate.sh"
+        ]
+      },
+      {
+        "name": "validate-script-shebang",
+        "command": [
+          "bash",
+          "-c",
+          "head -n 1 scripts/validate.sh | grep -q bash"
+        ]
+      },
+      {
+        "name": "rhythm-preset-present",
+        "command": [
+          "test",
+          "-f",
+          "Resources/Presets/Rhythm_ModernTight.json"
+        ]
+      },
+      {
+        "name": "lead-preset-present",
+        "command": [
+          "test",
+          "-f",
+          "Resources/Presets/Lead_SingingSustain.json"
+        ]
+      },
+      {
+        "name": "postamp-preset-present",
+        "command": [
+          "test",
+          "-f",
+          "Resources/Presets/PostAmp_HissSuppression.json"
+        ]
+      },
+      {
+        "name": "dikeyed-preset-present",
+        "command": [
+          "test",
+          "-f",
+          "Resources/Presets/DIKeyed_Rhythm.json"
+        ]
+      },
+      {
+        "name": "bass-preset-present",
+        "command": [
+          "test",
+          "-f",
+          "Resources/Presets/Bass_ActiveNoiseControl.json"
+        ]
+      },
+      {
+        "name": "diag-preset-present",
+        "command": [
+          "test",
+          "-f",
+          "Resources/Presets/Diag_LearnMyRig.json"
+        ]
+      },
+      {
+        "name": "release-doc-present",
+        "command": [
+          "test",
+          "-f",
+          "docs/verification/chuggate_release.md"
+        ]
+      },
+      {
+        "name": "phase-summary-present",
+        "command": [
+          "test",
+          "-f",
+          "docs/verification/chuggate_phase_summary.md"
+        ]
+      },
+      {
+        "name": "release-doc-mentions-validate-script",
+        "command": [
+          "grep",
+          "-q",
+          "validate.sh",
+          "docs/verification/chuggate_release.md"
+        ]
+      },
+      {
+        "name": "release-doc-mentions-manual-host",
+        "command": [
+          "grep",
+          "-Eiq",
+          "manual|host",
+          "docs/verification/chuggate_release.md"
+        ]
+      }
+    ]
+  }
+}

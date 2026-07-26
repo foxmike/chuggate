@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "task_id": "a.4",
+  "phase": "A",
+  "phase_id": "a",
+  "title": "gitignore, README, TestMain.cpp",
+  "description": "Project hygiene and unit-test runner entry point only.\n\nBefore editing, inspect:\n- existing /home/mike/dev/mike/music/plugins/chuggate/.gitignore\n- existing /home/mike/dev/mike/music/plugins/chuggate/README.md\n- /home/mike/dev/mike/music/plugins/shredboost/tests/TestMain.cpp\n- /home/mike/dev/mike/music/plugins/shredboost/.gitignore\n\nUpdate .gitignore to ignore build/, cmake-build-*, state/, .abracapocus/state/, .abracapocus/logs/, .abracapocus/reports/ (and keep sensible CMake/IDE/binary ignores already present).\n\nUpdate README.md with ChugGate one-line purpose, build prerequisites (CMake \u22653.22, C++20, JUCE submodule), how to run scripts/build_all.sh, and that factory presets live under Resources/Presets/.\n\nCreate tests/TestMain.cpp as a juce::UnitTestRunner console entry (ScopedJuceInitialiser_GUI, runAllTests, non-zero exit on failures) matching ShredBoost style. No product tests required yet beyond the runner compiling when linked.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    ".gitignore ignores build/, cmake-build-*, state/, .abracapocus/state/, .abracapocus/logs/, and .abracapocus/reports/",
+    "README.md documents project purpose and scripts/build_all.sh build steps",
+    "tests/TestMain.cpp exists and runs juce::UnitTestRunner with non-zero exit on failures",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/google/gemma-4-31b-it",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    ".gitignore",
+    "README.md",
+    "tests/TestMain.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/*",
+    "implement real unit test cases beyond runner main",
+    "add third-party test frameworks"
+  ],
+  "allowed_symbols": [
+    "main"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "mirror ShredBoost TestMain structure",
+      "extend existing gitignore entries without deleting abracapocus ignores"
+    ],
+    "forbidden": [
+      "replace README with unrelated product marketing",
+      "add Catch2/GoogleTest/doctest"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 600,
+  "verification_commands": []
+}

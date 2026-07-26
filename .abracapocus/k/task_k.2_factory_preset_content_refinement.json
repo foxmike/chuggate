@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "task_id": "k.2",
+  "phase": "K",
+  "phase_id": "k",
+  "title": "Factory preset content refinement",
+  "description": "Refine factory preset JSON content under Resources/Presets/ so shipping presets match CHUGGATE_SPEC.md \u00a724 intent: gain-conscious, category-correct, profile-aligned, and usable starting points (not extreme mute or extreme boost).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a724 Factory Presets and primary macro parameters (\u00a725 ranges)\n- Existing Resources/Presets/*.json from phase J (j.3)\n- Source/ParameterIDs.h for stable parameter id strings (read-only)\n- Source/Profiles.h profile names/indices (read-only)\n- Source/StateManager factory preset loader expectations (read-only)\n\nRefine (create if missing) these six categorized factory presets:\n- Resources/Presets/Rhythm_ModernTight.json \u2014 tight rhythm / palm-mute; deep floor; strong attack guard; Tight Rhythm profile\n- Resources/Presets/Lead_SingingSustain.json \u2014 lead sustain / soft floor; adaptive releaseheading; Lead Sustain profile\n- Resources/Presets/PostAmp_HissSuppression.json \u2014 post-amp hiss; Hiss Curtain friendly; Post-Amp Hiss profile\n- Resources/Presets/DIKeyed_Rhythm.json \u2014 external key, alignment- and lookahead-conscious defaults; DI-Keyed Reamp profile\n- Resources/Presets/Bass_ActiveNoiseControl.json \u2014 active bass hum rejection; moderate sustain; Active Bass profile\n- Resources/Presets/Diag_LearnMyRig.json \u2014 diagnostic / Noise Learn starting point; safe defaults, not extreme mute\n\nRefinement rules:\n- Keep consistent JSON shape: meta (name, category, description, schema_version, profileId/profileName, optional tuningId) + parameters map keyed by ParameterIDs\n- Gain-conscious: outputTrim near 0 dB; no extreme output boosts\n- Thresholds, floors, tightness, sustain, hiss macros intentional per category\n- Valid UTF-8 JSON\n- Do not edit C++ sources, CMake, scripts, or docs in this task\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Resources/Presets/Rhythm_ModernTight.json exists and is valid JSON",
+    "Resources/Presets/Lead_SingingSustain.json exists and is valid JSON",
+    "Resources/Presets/PostAmp_HissSuppression.json exists and is valid JSON",
+    "Resources/Presets/DIKeyed_Rhythm.json exists and is valid JSON",
+    "Resources/Presets/Bass_ActiveNoiseControl.json exists and is valid JSON",
+    "Resources/Presets/Diag_LearnMyRig.json exists and is valid JSON",
+    "Each preset includes meta name/category/schema_version and a parameters map keyed by parameter IDs",
+    "Each preset references a profile id or name aligned with its category intent",
+    "Presets remain gain-conscious (no extreme outputTrim boosts) and category-appropriate",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/google/gemma-4-31b-it",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Resources/Presets/Rhythm_ModernTight.json",
+    "Resources/Presets/Lead_SingingSustain.json",
+    "Resources/Presets/PostAmp_HissSuppression.json",
+    "Resources/Presets/DIKeyed_Rhythm.json",
+    "Resources/Presets/Bass_ActiveNoiseControl.json",
+    "Resources/Presets/Diag_LearnMyRig.json"
+  ],
+  "forbidden_changes": [
+    "modify any Source/** file",
+    "modify CMakeLists.txt",
+    "modify scripts/**",
+    "modify tests/**",
+    "modify docs/**",
+    "embed binary blobs or non-JSON formats",
+    "add online/cloud preset download URLs"
+  ],
+  "allowed_symbols": [],
+  "decision_budget": {
+    "allowed": [
+      "adjust numeric parameter values within named category intent",
+      "preserve or lightly extend the shared meta+parameters JSON shape",
+      "align profileId/profileName with existing profile names from Profiles.h"
+    ],
+    "forbidden": [
+      "implement C++ loaders or GUI",
+      "add new preset categories beyond the six listed files",
+      "change ParameterIDs or profile enums"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

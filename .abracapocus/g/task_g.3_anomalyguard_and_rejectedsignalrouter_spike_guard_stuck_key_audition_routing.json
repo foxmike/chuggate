@@ -1,0 +1,68 @@
+{
+  "schema_version": 1,
+  "task_id": "g.3",
+  "phase": "G",
+  "phase_id": "g",
+  "title": "AnomalyGuard and RejectedSignalRouter \u2014 spike guard, stuck-key, audition routing",
+  "description": "Implement Source/DSP/AnomalyGuard (cable spike, stuck-key, dropout) and Source/DSP/RejectedSignalRouter (r[n]=x[n]-y[n] audition) per CHUGGATE_SPEC \u00a719 and \u00a720.5.\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a719.1 Cable Spike Guard, \u00a719.2 Stuck-Key, \u00a719.3 Dropout Handling\n- .abracapocus/CHUGGATE_SPEC.md \u00a720.5 Rejected-Signal Audition choices and state-triggered audition\n- Source/ParameterIDs.h for audition.rejectedMode and audition.stateFilterMode if present\n- Existing performance state enum / detector envelope types so guards consume control flags without owning the state machine\n\nAnomalyGuard.h/.cpp (\u00a719):\n- Cable Spike Guard: detect impulses with extreme peak, insufficient body energy, and sub-minimum duration; when flagged, suppress false gate opening (return shouldSuppressOpen / isSpikeActive) \u2014 NOT a limiter; do not hard-clip audio.\n- Stuck-Key Detection: when external key is constantly active while main path is silent/noise-like for a documented hold time, set isStuckKeyWarning(); warning-only (no auto mute of key unless a clear API flag documents optional block).\n- Dropout Handling: if sidechain/key stream disappears (or valid flag goes false), hold current control state briefly, then recommend/allow crossfade to internal detection when fallback enabled; expose isDropoutActive() / shouldUseInternalFallback() with configurable hold time.\n- prepare(sampleRate)/reset(); analyze at block or per-sample control rate using preallocated state; no audio-thread heap alloc.\n\nRejectedSignalRouter.h/.cpp (\u00a720.5):\n- r[n] = x[n] - y[n] (and optional per-band x_b - y_b when band buffers provided).\n- Modes: Off, AllRejected, FullBand, Weight, Voice, Hiss, HissCurtain, NoiseModel, DetectorKey (match ParameterIDs audition.rejectedMode where possible).\n- State-triggered audition filter: Off / Hold / Sustain / Release / Closed \u2014 when active, pass rejected material only while current performance state matches; otherwise mute audition.\n- process outputs audition buffer from dry x, wet y, optional per-band rejects, optional noise-model or key taps; when mode Off, leave main path alone and silence audition.\n- prepare/reset; fixed buffers only after prepare.\n\nDo NOT edit PluginProcessor or CMakeLists.txt (g.4). Do NOT write tests (g.5).\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/AnomalyGuard.h and Source/DSP/AnomalyGuard.cpp exist",
+    "Source/DSP/RejectedSignalRouter.h and Source/DSP/RejectedSignalRouter.cpp exist",
+    "AnomalyGuard Cable Spike Guard flags extreme peak / low-body / short impulses and can suppress false opens without limiting audio",
+    "AnomalyGuard Stuck-Key detection warns when external key stays active while main path is silent/noise-like",
+    "AnomalyGuard Dropout handling holds briefly then exposes internal-detection fallback when sidechain disappears",
+    "RejectedSignalRouter computes r[n] = x[n] - y[n] and supports Armored audition modes including per-band and state-triggered filters",
+    "No heap allocation in the per-block process path after prepare for either unit",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/AnomalyGuard.h",
+    "Source/DSP/AnomalyGuard.cpp",
+    "Source/DSP/RejectedSignalRouter.h",
+    "Source/DSP/RejectedSignalRouter.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/LookaheadDelay.*",
+    "modify Source/DSP/StereoLinker.*",
+    "implement tests/LookaheadTests.cpp or tests/StereoTests.cpp",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread",
+    "implement a peak limiter as Cable Spike Guard"
+  ],
+  "allowed_symbols": [
+    "AnomalyGuard",
+    "RejectedSignalRouter",
+    "prepare",
+    "reset",
+    "process",
+    "analyze",
+    "shouldSuppressOpen",
+    "isSpikeActive",
+    "isStuckKeyWarning",
+    "isDropoutActive",
+    "shouldUseInternalFallback",
+    "setRejectedMode",
+    "setStateFilterMode",
+    "setPerformanceState"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use documented peak/body/duration thresholds for spike classification",
+      "implement state filter by muting audition when state does not match",
+      "accept optional band/noise/key buffer pointers that may be null"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt",
+      "rewrite PerformanceStateMachine states",
+      "turn Cable Spike Guard into a sample peak limiter"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 1200,
+  "verification_commands": []
+}

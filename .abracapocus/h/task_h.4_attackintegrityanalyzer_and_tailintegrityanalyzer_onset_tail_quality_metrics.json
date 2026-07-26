@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "task_id": "h.4",
+  "phase": "H",
+  "phase_id": "h",
+  "title": "AttackIntegrityAnalyzer and TailIntegrityAnalyzer \u2014 onset/tail quality metrics",
+  "description": "Implement Source/Analysis/AttackIntegrityAnalyzer and Source/Analysis/TailIntegrityAnalyzer using Performance Timeline / frame data (not new audio FFT paths) per phase-H goal and Appendix A.4 formulas.\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md Appendix A.4 Attack and Tail Integrity Analyzers\n- .abracapocus/CHUGGATE_SPEC.md \u00a720.1 (missed attacks, chopped tails visibility)\n- Source/Analysis/PerformanceHistory.h ring series and Source/Analysis/AnalysisFifo.h AnalysisFrame / QualityMode from h.1\u2013h.2\n\nImplement AttackIntegrityAnalyzer.h/.cpp:\n- Per-onset attack preservation ratio A_r = sum(y\u00b2) / sum(x\u00b2) over a configurable attack window (samples or ms around transient marker), where x is main/input energy series and y is output (gain-shaped) energy \u2014 use PerformanceHistory series or explicit push of windowed energies already available from timeline data.\n- Classify each onset: preserved / partial / missed via simple thresholds on A_r (document defaults, e.g. preserved \u22650.9, partial \u22650.5, else missed).\n- Summaries: counts over the retained history window; latest A_r; mean A_r. Fixed-capacity onset event log.\n- observe(const PerformanceHistory&) or observeOnset(...) APIs callable from message/analysis thread only.\n\nImplement TailIntegrityAnalyzer.h/.cpp:\n- Per-tail comparison of main decay vs output decay vs sustain confidence vs closure point (gate entering release/closed).\n- Detect lead-note choking: output decays materially faster than main while sustainConfidence remains high before intended musical end \u2014 emit a choke score/flag and counts.\n- Fixed-capacity tail event log and aggregate stats for GUI Diagnose view.\n\nBoth:\n- QualityMode Off/Live may disable or thin analysis; Studio/Diagnose enable full summaries.\n- prepare/reset; fixed memory; no audio-thread work; no PluginProcessor wiring; no CMake/tests.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/Analysis/AttackIntegrityAnalyzer.h and Source/Analysis/AttackIntegrityAnalyzer.cpp exist",
+    "Source/Analysis/TailIntegrityAnalyzer.h and Source/Analysis/TailIntegrityAnalyzer.cpp exist",
+    "AttackIntegrityAnalyzer computes A_r = sum(y^2)/sum(x^2) over an attack window and classifies preserved/partial/missed",
+    "AttackIntegrityAnalyzer exposes aggregate counts or summary statistics over the history window",
+    "TailIntegrityAnalyzer compares main decay vs output decay using sustain confidence and closure timing",
+    "TailIntegrityAnalyzer can flag/score lead-note choking cases",
+    "Both analyzers run with fixed preallocated memory and are intended for background/message thread only",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/Analysis/AttackIntegrityAnalyzer.h",
+    "Source/Analysis/AttackIntegrityAnalyzer.cpp",
+    "Source/Analysis/TailIntegrityAnalyzer.h",
+    "Source/Analysis/TailIntegrityAnalyzer.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/Analysis/AnalysisFifo.*",
+    "modify Source/Analysis/PerformanceHistory.*",
+    "modify Source/Analysis/NoiseFingerprint.*",
+    "modify Source/Analysis/AlignmentScopeData.*",
+    "implement tests/AnalysisTests.cpp",
+    "add non-JUCE third-party dependencies",
+    "run heavy analysis on the audio thread"
+  ],
+  "allowed_symbols": [
+    "AttackIntegrityAnalyzer",
+    "TailIntegrityAnalyzer",
+    "prepare",
+    "reset",
+    "observe",
+    "observeOnset",
+    "observeTail",
+    "getAttackPreservationRatio",
+    "getPreservedCount",
+    "getPartialCount",
+    "getMissedCount",
+    "getChokeScore",
+    "getChokeCount",
+    "setQualityMode"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "consume PerformanceHistory copyRecent buffers rather than owning a second long ring",
+      "document A_r classification thresholds as constants adjustable later",
+      "use epsilon guards when sum(x^2) is near zero",
+      "depend on QualityMode / gate state encoding already defined upstream"
+    ],
+    "forbidden": [
+      "modify PerformanceHistory storage layout beyond reading its public API",
+      "wire PluginProcessor processBlock",
+      "own CMakeLists.txt",
+      "introduce third-party DSP libraries for integrity metrics"
+    ]
+  },
+  "dependencies": [
+    "h.2"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

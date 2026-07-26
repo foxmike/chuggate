@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "task_id": "d.5",
+  "phase": "D",
+  "phase_id": "d",
+  "title": "Attack guard, fundamental estimator, and sustain tests",
+  "description": "Add focused Catch2 (or existing project test harness) unit tests covering AttackGuard, FundamentalEstimator, SustainAnalyzer, and FeedbackDetector.\n\nBefore editing, inspect:\n- tests/TestMain.cpp and existing tests/* patterns from prior phases\n- Source/DSP/AttackGuard.*, FundamentalEstimator.*, SustainAnalyzer.*, FeedbackDetector.* public APIs\n- .abracapocus/CHUGGATE_SPEC.md sections 8\u201310 formulas under test\n- CMakeLists.txt test target registration from d.4 (do not re-own CMake \u2014 prefer zero CMake edits)\n\nImplement tests/AttackGuardTests.cpp:\n1) Transient response: a short rising band-limited edge raises T[n] / transient strength above a quiet noise floor fixture.\n2) Open assist direction: with valid transient + body energy, threshold reduction / open-assist output is non-zero in the expected polarity (aids opening).\n3) False-trigger rejection: single-sample spike or click-like impulse WITHOUT sustained body energy does not set validAttack true after the confirmation window policy.\n4) Valid attack: transient + body-energy toneburst inside confirm window asserts validAttack.\n5) Disabled path: when enabled=false, assist/threshold reduction stays inactive (zero/identity).\n\nImplement tests/SustainTests.cpp:\n1) FundamentalEstimator: synthetic sine near a known f0 in-band yields validity=true and estimatedFundamental within a documented relative tolerance; near-silence yields validity=false or low confidence.\n2) Harmonicity: harmonic stack (fundamental + partials) yields higher H / sustain contribution than equal-power noise-like fixture at similar RMS.\n3) Adaptive release: higher S_sustain lengthens tau_release_eff vs low-score case, and result is clamped to configured max.\n4) FeedbackDetector safety: once feedbackActive, exceeding max hold / safety timeout clears protection; below min harmonicity cannot engage or cannot remain engaged.\n5) Feedback confidence polarity: stable harmonic long tone scores higher F than rapid transient/noise chatter fixture.\n\nKeep tests deterministic (fixed SR e.g. 48000, fixed lengths, explicit tolerances). No audio hardware.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "tests/AttackGuardTests.cpp exists and registers multiple test cases for AttackGuard",
+    "tests/SustainTests.cpp exists and registers multiple test cases covering FundamentalEstimator, SustainAnalyzer, and FeedbackDetector",
+    "AttackGuard tests assert validAttack requires body energy (false-trigger rejection of spike-only input)",
+    "AttackGuard tests assert non-zero open assist / threshold reduction on a valid pick-like fixture when enabled",
+    "FundamentalEstimator tests assert in-band sine f0 within stated tolerance and silence/low-energy invalid or low-confidence behavior",
+    "SustainAnalyzer tests assert higher harmonicity/sustain score for harmonic tone vs noise-like fixture and adaptive release lengthening/clamp",
+    "FeedbackDetector tests assert safety timeout / max hold clears protection and minimum harmonicity is enforced",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "pi_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "tests/AttackGuardTests.cpp",
+    "tests/SustainTests.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/DSP/* production DSP implementations except via test includes",
+    "modify Source/PluginProcessor.*",
+    "add non-JUCE third-party test frameworks not already used by the project",
+    "network access or non-deterministic timing assertions"
+  ],
+  "allowed_symbols": [
+    "AttackGuard",
+    "FundamentalEstimator",
+    "FundamentalEstimate",
+    "SustainAnalyzer",
+    "FeedbackDetector"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use the existing test framework from tests/TestMain.cpp",
+      "synthetic sine, harmonic stack, noise, and impulse fixtures at a fixed sample rate (e.g. 48000)",
+      "relative Hz/score tolerances rather than bit-exact equality"
+    ],
+    "forbidden": [
+      "reimplement DSP inside the test files",
+      "own CMakeLists.txt",
+      "require real audio hardware or host sidechain"
+    ]
+  },
+  "dependencies": [
+    "d.1",
+    "d.2",
+    "d.3"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": [],
+  "model": "openrouter/z-ai/glm-5.2"
+}

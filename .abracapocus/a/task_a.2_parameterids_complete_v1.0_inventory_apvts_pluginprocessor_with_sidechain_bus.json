@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "task_id": "a.2",
+  "phase": "A",
+  "phase_id": "a",
+  "title": "ParameterIDs (complete v1.0 inventory), APVTS, PluginProcessor with sidechain bus",
+  "description": "Implement stable v1.0 parameter IDs, APVTS layout, and PluginProcessor bus topology with sidechain support. This task is the sole owner of CMakeLists.txt target_sources additions for ParameterIDs/layout if needed, and sole owner of PluginProcessor / ParameterIDs in this phase.\n\nBefore editing, inspect:\n- Source-related conventions in /home/mike/dev/mike/music/plugins/shredboost/Source/PluginProcessor.h\n- /home/mike/dev/mike/music/plugins/shredboost/Source/PluginProcessor.cpp\n- /home/mike/dev/mike/music/plugins/chuggate/.abracapocus/CHUGGATE_SPEC.md (parameters, bus layouts, key source)\n- CMakeLists.txt from a.1\n\nImplement Source/ParameterIDs.h with complete stable string/paramID inventory for v1.0:\nGlobal: enabled, mode (Chug/Lead/Hybrid/Manual), topology (FullBand/DualBand/TriBand/HissCurtain), gainMode (HardGate/SoftGate/DownwardExpander), thresholdOpen (-100..0 dBFS), hysteresis (0.5..24 dB) \u2014 thresholdClose is DERIVED as open-hysteresis and MUST NOT be a stored parameter \u2014 attack, hold, release, maxAdaptiveRelease, floor, ratio, knee, curve, lookahead, outputTrim, bypass.\nKey: source, externalBlend, hpfEnabled, hpfFrequency, hpfSlope, lpfEnabled, lpfFrequency, lpfSlope, emphasisFreq, emphasisGain, emphasisQ, humMode (off/50Hz/60Hz/auto), humHarmonics, humNotchQ, humImmunityAmount, alignmentOffset, fallbackMode, listenMode.\nAttackGuard: enabled, amount, sensitivity, frequency, decay, softNoteAssist, maxThresholdReduction, confirmationWindow.\nSustain: enabled, amount, releaseExtension, harmonicWeight, decayWeight, noiseWeight, feedbackEnabled, feedbackSensitivity, feedbackMinDuration, feedbackMaxHold, feedbackFreqMin, feedbackFreqMax, feedbackFloor, feedbackRequireExtKey, feedbackSafetyTimeout.\nCadence: enabled, amount, releaseFraction, sourceMode (audio/hostTempo/combined/off).\nNoise learn: snrMargin, adaptiveEnabled, adaptiveRate.\nPer-band low/mid/high: floor, thresholdOffset, attackOffset, holdOffset, releaseMultiplier, solo, mute, detectorWeighting.\nHissCurtain: minFreq, maxFreq, depth.\nStereo: linkMode, linkAmount.\nCrossovers: dualFreq, triLowFreq, triHighFreq.\nAudition: rejectedMode (off/all/fullBand/weight/voice/hiss/hissCurtain/noiseModel/key), stateFilterMode (off/hold/sustain/release/closed).\nProfile/tuning index and A/B state selectors as parameters where appropriate.\n\nImplement Source/PluginProcessor.h/.cpp:\n- ChugGateAudioProcessor : juce::AudioProcessor with APVTS created from a createParameterLayout() covering ParameterIDs.\n- BusesProperties: main input, optional sidechain input, output. isBusesLayoutSupported must accept mono, stereo, and stereo+sidechain (mono or stereo SC); Standalone must operate safely without external sidechain.\n- processBlock stub (clear MIDI, no-op/pass-through ok).\n- getStateInformation/setStateInformation rockets through APVTS ValueTree; include schema_version property support hook (full StateManager integration lands in a.3).\n- createEditor returns editor forward-declared; hasEditor true.\n\nUpdate CMakeLists.txt ONLY as needed so ParameterIDs/layout compilation units are listed if split files are added under Source/.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/ParameterIDs.h exists and declares stable v1.0 parameter ID constants covering global, key, AttackGuard, Sustain/Feedback, Cadence, noise learn, per-band, HissCurtain, stereo, crossovers, audition, and profile/A-B IDs",
+    "thresholdClose is not a stored APVTS parameter; only thresholdOpen and hysteresis are stored",
+    "Source/PluginProcessor.h and Source/PluginProcessor.cpp define ChugGateAudioProcessor with APVTS",
+    "PluginProcessor configures main input, optional sidechain input, and output via BusesProperties",
+    "isBusesLayoutSupported accepts mono, stereo, and stereo+sidechain layouts and allows standalone without sidechain",
+    "processBlock stub compiles; getStateInformation/setStateInformation round-trip APVTS state with schema_version property",
+    "CMakeLists.txt target_sources includes PluginProcessor.cpp (and any new layout .cpp if added)",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/ParameterIDs.h",
+    "Source/PluginProcessor.h",
+    "Source/PluginProcessor.cpp",
+    "CMakeLists.txt"
+  ],
+  "forbidden_changes": [
+    "store thresholdClose as a discrete parameter",
+    "implement full DSP gate/expander algorithm",
+    "modify Source/StateManager.*",
+    "modify Source/PluginEditor.* beyond forward declarations needed to compile",
+    "modify scripts/*",
+    "modify .gitignore or README.md",
+    "add non-JUCE third-party libraries"
+  ],
+  "allowed_symbols": [
+    "ChugGateAudioProcessor",
+    "createParameterLayout",
+    "ParameterIDs",
+    "isBusesLayoutSupported",
+    "processBlock",
+    "getStateInformation",
+    "setStateInformation"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "put createParameterLayout in PluginProcessor.cpp or a thin ParameterLayout companion only if still under allowed_write_paths",
+      "derive display-only thresholdClose as open minus hysteresis",
+      "use juce::AudioProcessorValueTreeState::ParameterLayout choices/ranges matching stated min/max"
+    ],
+    "forbidden": [
+      "introduce a second parameter system besides APVTS",
+      "hard-require sidechain for standalone operation",
+      "implement Noise Learn / alignment DSP engines in this task"
+    ]
+  },
+  "dependencies": [
+    "a.1"
+  ],
+  "task_timeout_seconds": 1200,
+  "verification_commands": []
+}

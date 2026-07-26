@@ -1,0 +1,108 @@
+{
+  "verification": {
+    "checks": [
+      {
+        "name": "lookahead-delay-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/LookaheadDelay.cpp"
+        ]
+      },
+      {
+        "name": "stereo-linker-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/StereoLinker.cpp"
+        ]
+      },
+      {
+        "name": "anomaly-guard-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/AnomalyGuard.cpp"
+        ]
+      },
+      {
+        "name": "rejected-signal-router-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/RejectedSignalRouter.cpp"
+        ]
+      },
+      {
+        "name": "lookahead-tests-present",
+        "command": [
+          "test",
+          "-f",
+          "tests/LookaheadTests.cpp"
+        ]
+      },
+      {
+        "name": "stereo-tests-present",
+        "command": [
+          "test",
+          "-f",
+          "tests/StereoTests.cpp"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-lookahead-delay",
+        "command": [
+          "grep",
+          "-q",
+          "LookaheadDelay.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-stereo-linker",
+        "command": [
+          "grep",
+          "-q",
+          "StereoLinker.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-anomaly-guard",
+        "command": [
+          "grep",
+          "-q",
+          "AnomalyGuard.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-rejected-signal-router",
+        "command": [
+          "grep",
+          "-q",
+          "RejectedSignalRouter.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-lookahead-tests",
+        "command": [
+          "grep",
+          "-q",
+          "LookaheadTests.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-stereo-tests",
+        "command": [
+          "grep",
+          "-q",
+          "StereoTests.cpp",
+          "CMakeLists.txt"
+        ]
+      }
+    ]
+  }
+}

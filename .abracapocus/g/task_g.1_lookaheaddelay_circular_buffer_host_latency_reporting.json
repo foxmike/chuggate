@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "task_id": "g.1",
+  "phase": "G",
+  "phase_id": "g",
+  "title": "LookaheadDelay \u2014 circular buffer, host latency reporting",
+  "description": "Implement Source/DSP/LookaheadDelay as a realtime-safe main-path circular delay with discrete lookahead times and exact host latency reporting support.\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md section 17 (Lookahead values, N_L formula, zero default, no hidden latency)\n- .abracapocus/CHUGGATE_SPEC.md \u00a713 / latency notes: reported latency includes main-path lookahead; default 0 samples\n- Source/ParameterIDs.h for global.lookahead if present\n- Existing Source/DSP/* prepare/reset/process style (fixed storage, no audio-thread alloc) and Source/DSP/FractionalDelay.* for delay-line patterns if present\n\nImplement LookaheadDelay.h/.cpp per spec \u00a717:\n- Discrete lookahead set: Off, 0.25, 0.5, 1, 2, 5, 10 ms. Default Off (zero samples of delay).\n- N_L = round(tau_L * fs); x_D[n] = x[n - N_L] via a circular buffer preallocated in prepare(sampleRate, maxBlockSize, numChannels).\n- process (or processBlock) delays multi-channel wet/main audio in place or into a caller buffer; channels share the same delay length.\n- setLookaheadMs / setLookaheadEnum accepting only the discrete set (clamp or snap nearest legal value); getLatencySamples() returns N_L exactly for the active setting.\n- Seamless transitions when lookahead changes: crossfade or write-head hop that avoids clicks/pops (document approach); no zipper on wet path.\n- prepare/reset; no heap allocation on the audio path after prepare. Cap buffer for max 10 ms at max supported SR (e.g. 192 kHz) with fixed storage.\n- Do NOT call AudioProcessor::setLatencySamples here \u2014 g.4 owns host reporting via getLatencySamples() from this unit plus any alignment main-path delay.\n\nDo NOT implement StereoLinker, AnomalyGuard, or PluginProcessor wiring. Do NOT edit CMakeLists.txt (g.4). Do NOT write tests (g.5).\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/LookaheadDelay.h and Source/DSP/LookaheadDelay.cpp exist",
+    "LookaheadDelay supports discrete settings Off/0.25/0.5/1/2/5/10 ms with default Off (N_L=0)",
+    "Delay length uses N_L = round(tau_L * fs) via a circular buffer sized in prepare",
+    "getLatencySamples() returns the exact active main-path delay in samples",
+    "Lookahead setting changes do not produce hard clicks (smoothed or crossfaded transition)",
+    "No heap allocation in the per-block process path after prepare",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/LookaheadDelay.h",
+    "Source/DSP/LookaheadDelay.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/StereoLinker.*",
+    "modify Source/DSP/AnomalyGuard.*",
+    "modify Source/DSP/RejectedSignalRouter.*",
+    "implement tests/LookaheadTests.cpp or tests/StereoTests.cpp",
+    "call AudioProcessor::setLatencySamples inside LookaheadDelay",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread"
+  ],
+  "allowed_symbols": [
+    "LookaheadDelay",
+    "prepare",
+    "reset",
+    "process",
+    "setLookaheadMs",
+    "setLookaheadEnum",
+    "getLatencySamples",
+    "getLookaheadMs"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use plain C++20 + JUCE AudioBuffer/HeapBlock preallocated in prepare",
+      "snap illegal ms values to nearest legal discrete setting",
+      "crossfade on lookahead length change within a few ms"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt target_sources",
+      "implement stereo linking or anomaly detection inside this unit",
+      "report hidden latency beyond explicit N_L"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

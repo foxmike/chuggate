@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "task_id": "c.2",
+  "phase": "C",
+  "phase_id": "c",
+  "title": "GainComputer and GainSmoother \u2014 hard/soft/expander laws, curve shape, per-band",
+  "description": "Implement Source/DSP/GainComputer and Source/DSP/GainSmoother for target-gain laws and per-band open/close smoothing (realtime-safe).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md sections 15 (hard/soft/expander, floor, curve shape gamma) and 16 (per-band open/close alphas)\n- Source/DSP/PerformanceStateMachine.* public state/certainty API from c.1 if present (consume conceptually; do not edit it)\n- Existing Source/DSP/ conventions for prepare/reset/process\n\nImplement GainComputer.h/.cpp:\n- Modes: hard gate, soft gate, downward expander.\n- Hard: target snaps between unity and floor under digital open/close evidence.\n- Soft: transition spread across threshold knee / open certainty (compatible with section 7.3 soft region when supplied).\n- Downward expander: G_exp_dB = max(G_floor_dB, (R-1)*(L-T)) for R > 1; linear gain from dB.\n- Floor: g_floor = 10^(G_floor_dB/20) covering 0 dB through about \u221280 dB.\n- Curve shape: g_shaped = g_floor + (1-g_floor) * S^gamma with gamma <1 Natural, =1 Firm, >1 Clamp; S is open/amount in [0,1].\n- Inputs: detector level L (dB), threshold T, ratio R where needed, floor, gamma, optional open certainty / state hints from the performance engine. Output: linear target gain G*.\n\nImplement GainSmoother.h/.cpp:\n- Per-band (or N-band array) smoothing with separate open/close constants per section 16:\n  alpha = exp(-1/(fs*tau_open)) when G* > Gprev; else exp(-1/(fs*tau_close))\n  G[n] = alpha*G[n-1] + (1-alpha)*G*[n]\n- Support at least full-band (1) and multi-band channel counts needed by later Dual/Tri modes (e.g. up to 3 bands) without implementing crossovers.\n- prepare(sampleRate, numBands)/reset(); process target gains \u2192 smoothed gains. Realtime-safe.\n- Reopen continuity: when targets reverse during release, smoother must not force G to 0 \u2014 one-pole toward new target only.\n\nDo NOT edit PerformanceStateMachine. Do NOT edit CMakeLists.txt or PluginProcessor (c.3). Do NOT write tests (c.4).\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/GainComputer.h and Source/DSP/GainComputer.cpp exist",
+    "Source/DSP/GainSmoother.h and Source/DSP/GainSmoother.cpp exist",
+    "GainComputer implements hard gate, soft gate, and downward expander laws",
+    "Downward expander uses G_exp_dB = max(G_floor_dB, (R-1)*(L-T)) with R > 1",
+    "GainComputer applies floor g_floor = 10^(G_floor_dB/20) and curve shape g_shaped = g_floor + (1-g_floor)*S^gamma",
+    "GainSmoother uses separate open/close alphas alpha=exp(-1/(fs*tau)) and G[n]=alpha*G[n-1]+(1-alpha)*G*[n]",
+    "GainSmoother supports per-band open/close time constants for at least one and multiple bands",
+    "No heap allocation in the per-block process path",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/GainComputer.h",
+    "Source/DSP/GainComputer.cpp",
+    "Source/DSP/GainSmoother.h",
+    "Source/DSP/GainSmoother.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/PerformanceStateMachine.*",
+    "implement PerformanceStateMachine",
+    "implement tests/StateMachineTests.cpp",
+    "implement multiband crossovers or Hiss Curtain filters",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread"
+  ],
+  "allowed_symbols": [
+    "GainComputer",
+    "GainMode",
+    "GainSmoother",
+    "prepare",
+    "reset",
+    "process",
+    "setMode",
+    "setThresholdDb",
+    "setRatio",
+    "setFloorDb",
+    "setGamma",
+    "setOpenTime",
+    "setCloseTime",
+    "computeTargetGain",
+    "smooth"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use plain C++20 + JUCE types already in the project",
+      "define GainMode enum and fixed-size per-band state arrays (no heap in process)",
+      "accept open-certainty / PerformanceState as optional inputs without owning the state machine"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt target_sources",
+      "merge detector ballistics into GainComputer",
+      "implement LR4 crossovers or spectral split here"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

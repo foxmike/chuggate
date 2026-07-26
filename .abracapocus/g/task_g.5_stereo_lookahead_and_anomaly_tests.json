@@ -1,0 +1,61 @@
+{
+  "schema_version": 1,
+  "task_id": "g.5",
+  "phase": "G",
+  "phase_id": "g",
+  "title": "Stereo, lookahead, and anomaly tests",
+  "description": "Add focused Catch2 (or existing project harness) unit tests covering LookaheadDelay latency/delay integrity, StereoLinker modes and \u03bb blend, AnomalyGuard spike/stuck/dropout, and RejectedSignalRouter r[n]=x\u2212y.\n\nBefore editing, inspect:\n- tests/TestMain.cpp and existing tests/* patterns from prior phases\n- Source/DSP/LookaheadDelay.*, StereoLinker.*, AnomalyGuard.*, RejectedSignalRouter.* public APIs\n- .abracapocus/CHUGGATE_SPEC.md \u00a717\u201319 and \u00a720.5 formulas\n- CMakeLists.txt test registration from g.4 (do not re-own CMake \u2014 prefer zero CMake edits)\n\nImplement tests/LookaheadTests.cpp:\n1) Default Off: getLatencySamples()==0; process is pass-through within float epsilon on an impulse or sine.\n2) Each discrete legal ms at fs=48000: latency samples == round(ms*0.001*fs); delayed impulse peaks at the expected index (\u00b11 sample).\n3) Illegal midpoint snaps or clamps to a legal setting (document expected behavior from implementation).\n4) Finite output / no NaNs when changing lookahead mid-stream over a short block span.\n\nImplement tests/StereoTests.cpp:\n1) Max/Energy/Average formulas on known E_L/E_R pairs (exact or tight float tolerance).\n2) \u03bb blend: \u03bb=0 keeps independent gains; \u03bb=1 forces G_linked on both; \u03bb=0.5 midpoint.\n3) DualMono does not force shared envelope.\n4) Mono safety: synthetic prolonged |G_L\u2212G_R| divergence eventually sets warning.\n5) AnomalyGuard: synthetic short extreme impulse with low body \u2192 spike suppress; long key-high + main-silent \u2192 stuck-key warning; drop key-valid \u2192 dropout/fallback after hold.\n6) RejectedSignalRouter: with x=1, y=0.25 constant blocks, all-rejected audition \u2248 0.75; state filter mutes when state does not match.\n\nKeep tests deterministic (fixed SR 48000, fixed lengths, explicit tolerances). No audio hardware. Only write the two test files registered by g.4.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "tests/LookaheadTests.cpp exists and registers multiple test cases",
+    "tests/StereoTests.cpp exists and registers multiple test cases",
+    "Lookahead tests assert Off \u2192 0 latency and legal ms settings match round(tau*fs) delay",
+    "Stereo tests cover Max/Energy/Average formulas and \u03bb gain blend including DualMono independence",
+    "Stereo/anomaly tests cover mono safety warning and Cable Spike / Stuck-Key / Dropout behaviors",
+    "RejectedSignalRouter tests assert r[n]=x[n]-y[n] and state-filter muting",
+    "tests are deterministic with fixed sample rate and explicit numeric tolerances",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "pi_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "tests/LookaheadTests.cpp",
+    "tests/StereoTests.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/LookaheadDelay.*",
+    "modify Source/DSP/StereoLinker.*",
+    "modify Source/DSP/AnomalyGuard.*",
+    "modify Source/DSP/RejectedSignalRouter.*",
+    "add non-JUCE third-party dependencies",
+    "depend on real-time audio devices or host plugins"
+  ],
+  "allowed_symbols": [
+    "LookaheadDelay",
+    "StereoLinker",
+    "AnomalyGuard",
+    "RejectedSignalRouter"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use Catch2 TEST_CASE/SECTION style matching existing tests",
+      "use float absolute/relative tolerances for energy and delay peak tests",
+      "synthesize deterministic impulses, sines, and constant buffers as fixtures"
+    ],
+    "forbidden": [
+      "edit production DSP or PluginProcessor sources",
+      "re-own CMakeLists.txt test registration",
+      "depend on real-time audio devices or host plugins"
+    ]
+  },
+  "dependencies": [
+    "g.1",
+    "g.2",
+    "g.3",
+    "g.4"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": [],
+  "model": "openrouter/z-ai/glm-5.2"
+}

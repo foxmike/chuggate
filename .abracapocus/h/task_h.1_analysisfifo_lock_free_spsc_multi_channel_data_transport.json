@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "task_id": "h.1",
+  "phase": "H",
+  "phase_id": "h",
+  "title": "AnalysisFifo \u2014 lock-free SPSC, multi-channel data transport",
+  "description": "Implement Source/Analysis/AnalysisFifo as the lock-free single-producer single-consumer transport from audio thread to analysis/message thread.\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a720 (Visual Diagnostic System), \u00a728.1\u201328.2 (audio-thread rules, AbstractFifo analysis transport: drop frames, never block audio)\n- Existing Source/DSP/* prepare/reset patterns (fixed storage, no audio-thread alloc)\n- juce::AbstractFifo usage conventions in the JUCE submodule if needed\n\nImplement AnalysisFifo.h/.cpp:\n- Lock-free SPSC FIFO built on juce::AbstractFifo (or equivalent fixed-capacity ring with AbstractFifo as the free/used counter).\n- Payload carries a single AnalysisFrame (or equivalent POD/trivial struct) bundling fields needed by phase-H consumers: key envelope, main envelope, open/close thresholds, noise-floor estimate, gate state enum/int, output gain, transient flag/strength, sustain confidence, optional alignment/noise snapshot indices or small fixed arrays.\n- Multi-channel-aware capacity: size for N channels of any per-channel slots in the frame plus control metadata; capacity chosen at prepare() and never resized on the audio path.\n- Audio-thread API: tryPush(frame) / write \u2014 non-blocking; if full, skip/drop the frame (count drops via atomic if useful) and return false; never wait/block.\n- Analysis/message-thread API: tryPop(frame) / read \u2014 non-blocking drain.\n- QualityMode enum (Off, Live, Studio, Diagnose) owned or declared here (or a tiny shared AnalysisTypes header inside AnalysisFifo.h) so producers can gate how often to push (Live skips frames more aggressively than Studio/Diagnose; Off never pushes).\n- prepare(maxFrames, numChannels) / reset(); fixed HeapBlock/std::array storage sized in prepare only.\n- No mutex, no logging from the push path, no heap allocation after prepare.\n\nDo NOT implement PerformanceHistory, NoiseFingerprint, AlignmentScopeData, integrity analyzers, PluginProcessor wiring, CMakeLists, or tests.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/Analysis/AnalysisFifo.h and Source/Analysis/AnalysisFifo.cpp exist",
+    "AnalysisFifo uses juce::AbstractFifo (or documented equivalent) for lock-free SPSC free/used accounting",
+    "tryPush is non-blocking and drops frames when full rather than blocking the producer",
+    "tryPop is non-blocking and returns false when empty",
+    "QualityMode enum includes Off, Live, Studio, Diagnose",
+    "Storage capacity is fixed in prepare with no heap allocation on the push path after prepare",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/Analysis/AnalysisFifo.h",
+    "Source/Analysis/AnalysisFifo.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/Analysis/PerformanceHistory.*",
+    "modify Source/Analysis/NoiseFingerprint.*",
+    "modify Source/Analysis/AlignmentScopeData.*",
+    "modify Source/Analysis/AttackIntegrityAnalyzer.*",
+    "modify Source/Analysis/TailIntegrityAnalyzer.*",
+    "implement tests/AnalysisTests.cpp",
+    "add non-JUCE third-party dependencies",
+    "allocate or take mutexes on the audio/push path after prepare"
+  ],
+  "allowed_symbols": [
+    "AnalysisFifo",
+    "AnalysisFrame",
+    "QualityMode",
+    "prepare",
+    "reset",
+    "tryPush",
+    "tryPop",
+    "setQualityMode",
+    "getQualityMode",
+    "getDropCount"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "define POD AnalysisFrame with fixed-size arrays for multi-channel scalars",
+      "place QualityMode in AnalysisFifo.h for shared use by later tasks",
+      "use juce::AbstractFifo + HeapBlock preallocated in prepare",
+      "implement skip-frame policy via full-FIFO drop and/or quality-based subsample"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt target_sources",
+      "implement PerformanceHistory ring buffer or integrity metrics inside AnalysisFifo",
+      "block or spin-wait on full FIFO from the producer path"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

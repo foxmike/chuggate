@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "task_id": "d.3",
+  "phase": "D",
+  "phase_id": "d",
+  "title": "SustainAnalyzer and FeedbackDetector \u2014 harmonicity, decay, safety bounds",
+  "description": "Implement Source/DSP/SustainAnalyzer and Source/DSP/FeedbackDetector using FundamentalEstimator for harmonicity. Real-time safe; control-rate spectral features OK with fixed buffers.\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md sections 9\u201310 (harmonicity H, spectral stability D_s, decay slope m_E, composite S_sustain, adaptive release, feedback confidence F, safety)\n- Source/DSP/FundamentalEstimator.* public snapshot API from d.2 (estimatedFundamental, confidence, validity)\n- Source/ParameterIDs.h Sustain / feedback-related IDs if present\n- PerformanceStateMachine sustain-protection / external score input surface from phase C (read only \u2014 do not edit it here)\n\nImplement SustainAnalyzer.h/.cpp per \u00a79:\n- Harmonicity H using f0 from FundamentalEstimator: fraction of spectral power near integer harmonics vs total (+ eps). Use a small fixed magnitude spectrum or band-energy approximation consistent with control-rate operation.\n- Spectral stability: D_s[t] = sum_k |P_hat_t[k] - P_hat_{t-1}[k]| on a normalized fixed bin grid.\n- Decay slope m_E = dL/dt on detector level; gradual negative slope supports valid musical decay D.\n- Noise-likeness N from unstable/low-harmonic energy.\n- Composite: S_sustain = w_h*H + w_d*D + w_e*E - w_n*N with configurable weights (defaults OK).\n- Adaptive release: tau_release_eff = tau_base * [1 + A_s * S_sustain^gamma], clamped to configured maximum; expose getter.\n- Bend/vibrato tolerance (\u00a79.7): log-space smoothing on f0; do not droop sustain solely from slow f0 drift.\n- prepare/reset/process from mono/key + L + FundamentalEstimate \u2192 S_sustain, components, tau_release_eff, sustainActive/protection flag.\n\nImplement FeedbackDetector.h/.cpp per \u00a710:\n- Confidence F = w_h*H + w_s*(1-D_s) + w_g*G - w_t*T with H from harmonicity, D_s spectral change, G flat/positive level slope, T transient density (may accept AttackGuard transient strength as optional input, or estimate internally).\n- Controls/setters: enable, sensitivity, min duration, max hold, allowed frequency range, floor during feedback, require external DI activity, safety timeout.\n- SAFETY MANDATORY: maximum protection duration and minimum harmonicity gates. Feedback must NOT hold open indefinitely for continuous hum, steady noise, stuck sidechain, or frozen detector \u2014 enforce safety timeout and min-H, clear protection when violated.\n- Outputs: feedbackActive, confidence F, suggested floor, protectOpen flag with remaining hold time.\n\nDo NOT edit FundamentalEstimator sources beyond includes. Do NOT edit PerformanceStateMachine, PluginProcessor, or CMakeLists.txt (d.4). Do NOT write tests (d.5).\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/SustainAnalyzer.h, Source/DSP/SustainAnalyzer.cpp, Source/DSP/FeedbackDetector.h, and Source/DSP/FeedbackDetector.cpp exist",
+    "SustainAnalyzer computes harmonicity H using FundamentalEstimator f0 and exposes composite S_sustain",
+    "SustainAnalyzer implements spectral stability D_s and decay-slope contribution toward the sustain score",
+    "SustainAnalyzer exposes adaptive release tau_release_eff = tau_base * [1 + A_s * S_sustain^gamma] clamped to a configured maximum",
+    "FeedbackDetector computes confidence F from harmonicity, spectral stability, level slope, and transient density",
+    "FeedbackDetector enforces mandatory maximum protection duration and minimum harmonicity safety bounds (cannot hold open indefinitely on hum/noise)",
+    "No heap allocation in the per-block process path",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/SustainAnalyzer.h",
+    "Source/DSP/SustainAnalyzer.cpp",
+    "Source/DSP/FeedbackDetector.h",
+    "Source/DSP/FeedbackDetector.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/PerformanceStateMachine.*",
+    "modify Source/DSP/FundamentalEstimator.*",
+    "modify Source/DSP/AttackGuard.*",
+    "implement tests/AttackGuardTests.cpp or tests/SustainTests.cpp",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread",
+    "allow unbounded feedback hold without safety timeout"
+  ],
+  "allowed_symbols": [
+    "SustainAnalyzer",
+    "FeedbackDetector",
+    "FundamentalEstimator",
+    "FundamentalEstimate",
+    "prepare",
+    "reset",
+    "process",
+    "getSustainScore",
+    "getAdaptiveRelease",
+    "isSustainProtectionActive",
+    "getFeedbackConfidence",
+    "isFeedbackActive",
+    "getFeedbackFloor",
+    "setWeights",
+    "setSafetyTimeout",
+    "setMinimumHarmonicity"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "consume FundamentalEstimator snapshots without modifying FundamentalEstimator sources",
+      "fixed-size magnitude bins / band energies for H and D_s",
+      "optional transient-density input float from AttackGuard-compatible surfaces"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt or PerformanceStateMachine edits",
+      "reimplement FundamentalEstimator inside SustainAnalyzer",
+      "indefinite feedback hold without max duration / min harmonicity"
+    ]
+  },
+  "dependencies": [
+    "d.2"
+  ],
+  "task_timeout_seconds": 1200,
+  "verification_commands": []
+}

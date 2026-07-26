@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "task_id": "g.4",
+  "phase": "G",
+  "phase_id": "g",
+  "title": "processBlock wiring \u2014 lookahead, stereo, anomaly, rejected, CMakeLists",
+  "description": "Be the sole PluginProcessor + CMakeLists.txt owner for phase G. Wire LookaheadDelay, StereoLinker, AnomalyGuard, and RejectedSignalRouter into prepare/processBlock; call setLatencySamples for exact main-path delay; register new DSP sources and stereo/lookahead tests.\n\nBefore editing, inspect:\n- Source/PluginProcessor.h/.cpp existing phase F signal order (key \u2192 delay \u2192 detector \u2192 guards \u2192 state \u2192 gain \u2192 multiband/topology)\n- Source/DSP/LookaheadDelay.*, StereoLinker.*, AnomalyGuard.*, RejectedSignalRouter.* public APIs from g.1\u2013g.3\n- .abracapocus/CHUGGATE_SPEC.md \u00a73 signal flow (Optional Main Lookahead, Stereo Link Matrix), \u00a717\u201319, \u00a720.5, latency rules (default 0, exact PDC when lookahead on)\n- Source/ParameterIDs.h for global.lookahead, stereo.linkMode/linkAmount, audition.rejectedMode/stateFilterMode, key.fallbackMode\n- Existing CMakeLists.txt target_sources / test registration from prior phases\n\nPluginProcessor wiring (realtime-safe):\n- Members: LookaheadDelay, StereoLinker, AnomalyGuard, RejectedSignalRouter plus any small audition output buffer. Preallocate temps in prepare only.\n- Conceptual processBlock order extension:\n  1) existing key selection/conditioning (+ FractionalDelay key-path if present)\n  2) AnomalyGuard: spike on main/key as appropriate \u2192 suppress false opens into AttackGuard/state path; stuck-key from external key vs main energy; dropout \u2192 hold then switch to internal detection when fallback enabled\n  3) Detector envelopes: feed StereoLinker for Max/Energy/Average/DualMono + link amount before shared state/gain decisions on stereo buses; DualMono may run independent L/R gains if already supported, else document single-envelope + gain-link path\n  4) existing state machine \u2192 gain \u2192 multiband/topology path producing wet y from dry x\n  5) LookaheadDelay on the MAIN wet (or dry-before-gate if closing early requires delayed dry\u2014prefer delaying the path that must align openings: delay dry main into gate application so attack aligns; document). Combine lookahead samples with any main-path alignment delay already counted.\n  6) RejectedSignalRouter: r = x\u2212y (and band rejects if multiband taps available); when audition mode \u2260 Off, route audition to output or replace monitoring path per listen/audition param without breaking dry/wet engaged processing\u2014if host has single out, optional swap-to-audition when mode on\n  7) setLatencySamples(LookaheadDelay.getLatencySamples() + any residual main-path alignment delay); default Off \u2192 0. No hidden latency.\n- prepareToPlay: prepare all phase-G units; reset on releaseResources as needed.\n- Read APVTS via ParameterIDs when present; else safe defaults. No editor/GUI work.\n\nCMakeLists.txt (phase-G sole owner):\n- Add LookaheadDelay.cpp, StereoLinker.cpp, AnomalyGuard.cpp, RejectedSignalRouter.cpp to plugin/library target_sources\n- Register tests/LookaheadTests.cpp and tests/StereoTests.cpp on the existing test executable/target (bodies filled in g.5)\n- Additive only \u2014 do not restructure unrelated targets\n\nDo NOT implement test bodies (g.5). Do NOT rewrite DSP unit sources owned by g.1\u2013g.3.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/PluginProcessor.h/.cpp construct and prepare LookaheadDelay, StereoLinker, AnomalyGuard, and RejectedSignalRouter",
+    "processBlock applies StereoLinker modes and link amount on stereo envelope/gain paths",
+    "AnomalyGuard spike/stuck-key/dropout results influence open-suppression and key fallback as documented",
+    "LookaheadDelay is applied on the main path and AudioProcessor::setLatencySamples reports exact main-path delay (0 when lookahead off)",
+    "RejectedSignalRouter can produce r[n]=x[n]-y[n] audition when audition mode is enabled",
+    "CMakeLists.txt lists LookaheadDelay.cpp, StereoLinker.cpp, AnomalyGuard.cpp, and RejectedSignalRouter.cpp",
+    "CMakeLists.txt registers tests/LookaheadTests.cpp and tests/StereoTests.cpp on the test target",
+    "No heap allocation introduced on the audio path after prepareToPlay",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/PluginProcessor.h",
+    "Source/PluginProcessor.cpp",
+    "CMakeLists.txt"
+  ],
+  "forbidden_changes": [
+    "modify Source/DSP/LookaheadDelay.*",
+    "modify Source/DSP/StereoLinker.*",
+    "modify Source/DSP/AnomalyGuard.*",
+    "modify Source/DSP/RejectedSignalRouter.*",
+    "implement tests/LookaheadTests.cpp or tests/StereoTests.cpp bodies",
+    "restructure unrelated CMake targets",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread",
+    "implement Performance Timeline GUI"
+  ],
+  "allowed_symbols": [
+    "ChugGateAudioProcessor",
+    "prepareToPlay",
+    "processBlock",
+    "releaseResources",
+    "setLatencySamples",
+    "lookaheadDelay",
+    "stereoLinker",
+    "anomalyGuard",
+    "rejectedSignalRouter"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "add member instances and includes for phase G DSP units on PluginProcessor",
+      "combine lookahead latency with existing main-path alignment delay when both engaged",
+      "read existing APVTS parameters by ParameterIDs when available, else temporary defaults",
+      "add CMake target_sources for phase G DSP units and LookaheadTests/StereoTests",
+      "when DualMono full dual state machines are not present, link gains after a shared state machine and document the limitation"
+    ],
+    "forbidden": [
+      "reimplement circular delay, link formulas, spike/stuck/dropout logic, or r[n] math inside PluginProcessor beyond API calls",
+      "own or rewrite LookaheadDelay/StereoLinker/AnomalyGuard/RejectedSignalRouter source files",
+      "expand scope into Performance Timeline / Diagnose GUI panels",
+      "report non-zero latency when lookahead is Off and no main-path alignment delay is active"
+    ]
+  },
+  "dependencies": [
+    "g.1",
+    "g.2",
+    "g.3"
+  ],
+  "task_timeout_seconds": 1200,
+  "verification_commands": []
+}

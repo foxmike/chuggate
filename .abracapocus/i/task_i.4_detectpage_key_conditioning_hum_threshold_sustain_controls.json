@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "task_id": "i.4",
+  "phase": "I",
+  "phase_id": "i",
+  "title": "DetectPage \u2014 key conditioning, hum, threshold, sustain controls",
+  "description": "Implement the Detect editor page for key conditioning, hum, threshold, transient, and sustain controls (spec \u00a721.4 Detect, \u00a75, \u00a76, \u00a78\u20139).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a75 key-path pre-conditioning (HPF/LPF/emphasis/Powerline Shield)\n- .abracapocus/CHUGGATE_SPEC.md \u00a76 detector engine ballistics\n- .abracapocus/CHUGGATE_SPEC.md \u00a78 Pick Attack Guard controls, \u00a79 Sustain Intelligence controls\n- .abracapocus/CHUGGATE_SPEC.md \u00a726\u201327 Parameter Ranges and Stable Parameter IDs\n- Source/ParameterIDs.h\n- Source/GUI/ChugLookAndFeel.h from i.1\n- Source/GUI/PerformPage.h style from i.3 if present for layout consistency\n\nImplement DetectPage.h/.cpp:\n- juce::Component constructed with APVTS reference.\n- Sections/controls: key HPF, key LPF, detector emphasis (freq/gain/Q), hum mode + harmonics, open/close threshold or threshold+hysteresis, detector attack/hold/release ballistics as exposed by ParameterIDs, Attack Guard enable/amount/frequency, Sustain enable/amount/release extension/weights, feedback-related sustain toggles if IDs exist.\n- Optional Key Listen mode toggle if parameter exists.\n- Clear labeled groups; keyboard focusable controls; layout usable at min width.\n- No DSP, no CMake, no editor shell.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/GUI/DetectPage.h and Source/GUI/DetectPage.cpp exist",
+    "DetectPage is a juce::Component constructed with an AudioProcessorValueTreeState reference",
+    "DetectPage binds key conditioning controls (HPF, LPF, emphasis, hum) to ParameterIDs via APVTS attachments",
+    "DetectPage binds threshold/hysteresis (or open/close), Attack Guard, and Sustain Intelligence controls present in ParameterIDs.h",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/GUI/DetectPage.h",
+    "Source/GUI/DetectPage.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginEditor.*",
+    "modify Source/PluginProcessor.*",
+    "modify Source/ParameterIDs.h",
+    "modify Source/GUI/ChugLookAndFeel.*",
+    "implement other GUI pages or analysis components",
+    "add non-JUCE third-party dependencies"
+  ],
+  "allowed_symbols": [
+    "DetectPage",
+    "resized",
+    "paint"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "sectioned layout with labeled groups for Key, Hum, Threshold, Transient, Sustain",
+      "APVTS attachments only for existing ParameterIDs"
+    ],
+    "forbidden": [
+      "invent new parameter IDs in ParameterIDs.h",
+      "draw PerformanceTimeline or NoiseFingerprint inside DetectPage",
+      "own PluginEditor tabs or CMakeLists"
+    ]
+  },
+  "dependencies": [
+    "i.1"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

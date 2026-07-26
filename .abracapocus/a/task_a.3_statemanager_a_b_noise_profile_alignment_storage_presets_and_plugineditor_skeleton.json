@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "task_id": "a.3",
+  "phase": "A",
+  "phase_id": "a",
+  "title": "StateManager (A/B, noise profile, alignment storage, presets) and PluginEditor skeleton",
+  "description": "Implement state engine and a minimal PluginEditor skeleton that wires to the processor.\n\nBefore editing, inspect:\n- Source/PluginProcessor.h and Source/PluginProcessor.cpp from a.2\n- Source/ParameterIDs.h\n- /home/mike/dev/mike/music/plugins/chuggate/.abracapocus/CHUGGATE_SPEC.md (state, presets, A/B, noise profile, DI alignment storage)\n- Sibling editor stubs in shredboost/shredspace Source/PluginEditor.*\n\nImplement Source/StateManager.h/.cpp:\n- XML/ValueTree state with schema_version field\n- A/B slots (copy current \u2194 A/B, swap)\n- learned noise profile storage blob/subtree\n- DI alignment result storage (offset, confidence, metadata)\n- factory presets loaded read-only from Resources/Presets/ (directory may be empty placeholder; loader must not crash)\n- user presets via juce::File::getSpecialLocation per-user app data under a ChugGate folder\n- APIs to serialize/apply through the processor APVTS without audio-thread allocations in the public save/load paths where practical\n\nImplement Source/PluginEditor.h/.cpp:\n- ChugGateAudioProcessorEditor skeleton hosting processor reference\n- Minimal resized/paint so Standalone opens a window\n- createEditor in processor already returns this type \u2014 ensure linkage\n\nIf CMake must list StateManager.cpp, only add that source line; do not restructure the whole build file.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/StateManager.h and Source/StateManager.cpp exist",
+    "StateManager persists schema_version in saved XML/ValueTree state",
+    "StateManager supports A/B slots and storage for learned noise profile and DI alignment results",
+    "StateManager loads factory presets from Resources/Presets/ as read-only and user presets from per-user app data",
+    "Source/PluginEditor.h and Source/PluginEditor.cpp define ChugGateAudioProcessorEditor skeleton that constructs from ChugGateAudioProcessor",
+    "CMakeLists.txt includes StateManager.cpp in plugin/test targets if required to link",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/StateManager.h",
+    "Source/StateManager.cpp",
+    "Source/PluginEditor.h",
+    "Source/PluginEditor.cpp",
+    "CMakeLists.txt",
+    "Resources/Presets/"
+  ],
+  "forbidden_changes": [
+    "rewrite ParameterIDs inventory",
+    "change bus layout / isBusesLayoutSupported logic except editor linkage",
+    "implement Performance Timeline GUI",
+    "implement DSP modules",
+    "modify .gitignore, README.md, tests/TestMain.cpp",
+    "add cloud or network preset services"
+  ],
+  "allowed_symbols": [
+    "StateManager",
+    "ChugGateAudioProcessorEditor",
+    "schema_version",
+    "loadFactoryPresets",
+    "saveUserPreset",
+    "loadUserPreset",
+    "copyToSlot",
+    "recallSlot"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "store A/B as ValueTree copies",
+      "create empty Resources/Presets/.gitkeep or placeholder factory XML",
+      "minimal editor UI with plugin name label only"
+    ],
+    "forbidden": [
+      "full multi-page Performance Timeline GUI",
+      "change plugin manufacturer/bundle identity",
+      "replace APVTS with custom binary-only state format"
+    ]
+  },
+  "dependencies": [
+    "a.2"
+  ],
+  "task_timeout_seconds": 1200,
+  "verification_commands": []
+}

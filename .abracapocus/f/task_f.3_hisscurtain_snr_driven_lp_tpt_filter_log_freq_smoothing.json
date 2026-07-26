@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "task_id": "f.3",
+  "phase": "F",
+  "phase_id": "f",
+  "title": "HissCurtain \u2014 SNR-driven LP, TPT filter, log-freq smoothing",
+  "description": "Implement Source/DSP/HissCurtain: progressive high-frequency reduction driven by high-band SNR, using a modulation-stable TPT low-pass with log-frequency cutoff smoothing.\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a72.2 Hiss Curtain equations and \u00a714 Hiss Curtain min/max ranges\n- Parameter inventory mentions hissCurtain.minFreq, hissCurtain.maxFreq, hissCurtain.depth\n- Existing Source/DSP/ filter prepare/reset style; CrossoverSplitter from f.1 if shared high-band energy helpers are useful (do not edit it)\n\nImplement HissCurtain.h/.cpp:\n- Cutting cutoff mapping (\u00a72.2):\n  Q_H = clamp((SNR_H - S_min) / (S_max - S_min), 0, 1)\n  ln(f_c) = ln(f_min) + Q_H * (ln(f_max) - ln(f_min))\n  f_c = exp(ln(f_c))\n  When HF content is musically strong (high SNR_H), cutoff stays near f_max; as tail becomes hiss-dominated (low SNR_H), cutoff moves toward f_min.\n- Depth control: blend between dry input and filtered signal, or scale how far f_c may travel toward f_min (document). depth=0 \u2248 bypass; depth=1 full curtain.\n- Ranges: f_min in 500 Hz\u20138 kHz, f_max in 3\u201320 kHz with f_min < f_max ordering protection; clamp all setters.\n- Filter: modulation-stable TPT (topology-preserving transform / SVF-style) low-pass, 12 or 24 dB/oct (prefer one well-documented choice, or cascade two 12 dB stages for 24). Update coeffs from smoothed log-frequency every sample or every few samples without zipper/clicks under continuous f_c motion.\n- SNR_H input: accept externally computed high-band SNR (linear or dB \u2014 document) via setSnr or per-block process argument; optional lightweight internal HF energy follow if convenient, but external drive is enough for f.4 wiring.\n- prepare(sampleRate, maxBlockSize, numChannels)/reset(); process in-place or input\u2192output; stereo with shared cutoff. No heap allocation after prepare.\n- Expose setMinFreqHz, setMaxFreqHz, setDepth, setSnrRange(S_min,S_max), getCutoffHz for diagnostics.\n\nDo NOT implement MultibandGate dual/tri laws. Do NOT edit PluginProcessor or CMakeLists.txt (f.4). Do NOT write tests (f.5).\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/HissCurtain.h and Source/DSP/HissCurtain.cpp exist",
+    "HissCurtain computes Q_H = clamp((SNR_H - S_min)/(S_max - S_min), 0, 1)",
+    "HissCurtain maps cutoff in log domain: ln(f_c) = ln(f_min) + Q_H * (ln(f_max) - ln(f_min))",
+    "HissCurtain uses a modulation-stable TPT (or SVF-TPT) low-pass with log-frequency smoothing of f_c",
+    "HissCurtain clamps f_min to 500 Hz\u20138 kHz and f_max to 3\u201320 kHz with f_min < f_max protection",
+    "HissCurtain depth control bypasses or fully engages the curtain as documented",
+    "No heap allocation in the per-block process path after prepare",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/HissCurtain.h",
+    "Source/DSP/HissCurtain.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/CrossoverSplitter.*",
+    "modify Source/DSP/MultibandGate.*",
+    "implement tests/MultibandGateTests.cpp",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread"
+  ],
+  "allowed_symbols": [
+    "HissCurtain",
+    "prepare",
+    "reset",
+    "process",
+    "setMinFreqHz",
+    "setMaxFreqHz",
+    "setDepth",
+    "setSnr",
+    "setSnrRange",
+    "getCutoffHz"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "implement TPT/SVF low-pass from first principles or thin JUCE dsp helpers",
+      "accept external SNR_H rather than owning full multiband detector",
+      "smooth ln(f_c) with a one-pole filter for click-free motion",
+      "use plain C++20 + JUCE types already in the project"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt target_sources",
+      "implement dual/tri MultibandGate gain combiner here",
+      "use non-modulation-stable coefficient updates that click under continuous f_c motion"
+    ]
+  },
+  "dependencies": [
+    "f.1"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

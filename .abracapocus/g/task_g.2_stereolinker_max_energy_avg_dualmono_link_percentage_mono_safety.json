@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "task_id": "g.2",
+  "phase": "G",
+  "phase_id": "g",
+  "title": "StereoLinker \u2014 Max/Energy/Avg/DualMono, link percentage, mono safety",
+  "description": "Implement Source/DSP/StereoLinker as a control-rate stereo link matrix for detector envelopes and/or per-channel gains per CHUGGATE_SPEC \u00a718.\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md section 18 (linking modes, link percentage \u03bb blend, mono safety divergence warning)\n- Source/ParameterIDs.h for stereo.linkMode and stereo.linkAmount\n- Existing detector/gain types (envelopes, linear gain) so APIs accept float L/R pairs without owning the full state machine\n\nImplement StereoLinker.h/.cpp per spec \u00a718:\n- Modes: Max E_link = max(E_L, E_R); Energy E_link = sqrt((E_L\u00b2 + E_R\u00b2)/2); Average E_link = (E_L + E_R)/2; DualMono (independent \u2014 no shared envelope/gain forcing).\n- For envelope linking: given E_L, E_R produce linked detector level(s) for Max/Energy/Average; DualMono returns the pair unchanged.\n- Link percentage \u03bb \u2208 [0,1]: after computing linked or per-channel gains G_L, G_R and optional G_linked from the shared path,\n  G_L' = \u03bb * G_linked + (1-\u03bb) * G_L; G_R' = \u03bb * G_linked + (1-\u03bb) * G_R.\n  When DualMono, \u03bb does not force linkage (document; \u03bb may still be stored).\n- API surface suitable for processBlock: setMode, setLinkAmount, linkEnvelopes(E_L, E_R) \u2192 linked E or pair; linkGains(G_L, G_R, G_linked_or_from_shared) \u2192 G_L', G_R'.\n- Mono safety (\u00a718.3): track recent |G_L'\u2212G_R'| (or envelope divergence under DualMono) over a short window; expose isMonoSafetyWarning() / getDivergenceMetric() when dual-mono gating produces frequent L/R gain divergence above a documented threshold on a stereo bus. Warning only \u2014 do not auto-force link mode.\n- prepare/reset optional if windowed metrics need SR; no heap allocation on the audio/control path after prepare.\n- Mono input: safe pass-through (single channel treated as linked with itself).\n\nDo NOT edit PluginProcessor or CMakeLists.txt. Do NOT write tests (g.5).\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/StereoLinker.h and Source/DSP/StereoLinker.cpp exist",
+    "StereoLinker implements Max, Energy, Average, and DualMono link modes per spec \u00a718.1 formulas",
+    "Link percentage \u03bb blends G_linked with per-channel gains: G' = \u03bb*G_linked + (1-\u03bb)*G_channel",
+    "DualMono leaves L/R envelopes/gains independent",
+    "Mono safety warning API flags frequent L/R gain divergence under dual-mono stereo use",
+    "No heap allocation in the per-block process/link path after prepare",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/StereoLinker.h",
+    "Source/DSP/StereoLinker.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/LookaheadDelay.*",
+    "modify Source/DSP/AnomalyGuard.*",
+    "modify Source/DSP/RejectedSignalRouter.*",
+    "implement tests/StereoTests.cpp",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread"
+  ],
+  "allowed_symbols": [
+    "StereoLinker",
+    "prepare",
+    "reset",
+    "setMode",
+    "setLinkAmount",
+    "linkEnvelopes",
+    "linkGains",
+    "isMonoSafetyWarning",
+    "getDivergenceMetric"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "operate at control/block rate on float envelopes and gains",
+      "choose a documented divergence threshold and hold time for mono safety warning",
+      "treat mono as trivial single-channel pass-through"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt",
+      "reimplement full PerformanceStateMachine inside StereoLinker",
+      "auto-switch modes when mono safety warns"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

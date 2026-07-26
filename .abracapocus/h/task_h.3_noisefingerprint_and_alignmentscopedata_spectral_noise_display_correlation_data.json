@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "task_id": "h.3",
+  "phase": "H",
+  "phase_id": "h",
+  "title": "NoiseFingerprint and AlignmentScopeData \u2014 spectral noise display, correlation data",
+  "description": "Implement Source/Analysis/NoiseFingerprint and Source/Analysis/AlignmentScopeData as analysis-side display models for Diagnose/Align views (spec \u00a720.2\u201320.3).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a720.2 DI Alignment Scope (key onset, main onset, correlation curve, offset, confidence, offset variation, required key delay / main lookahead)\n- .abracapocus/CHUGGATE_SPEC.md \u00a720.3 Noise Fingerprint (time-averaged frequency display: floor median, upper percentile, 50/60 Hz hum, harmonic mains, HF hiss, intermittent bursts, detector filter response, multiband thresholds)\n- Source/Analysis/AnalysisFifo.h QualityMode and any noise/alignment fields on AnalysisFrame from h.1\n- Existing Noise Learn / AlignmentAnalyzer public outputs if present under Source/DSP (consume snapshots; do not reimplement learning or cross-correlation engines)\n\nImplement NoiseFingerprint.h/.cpp:\n- Fixed-bin magnitude/spectral display buffer (prepare sets numBins; e.g. log or linear bins \u2014 document).\n- updateFromLearnedProfile / accumulate or setSpectrum APIs ingest time-averaged idle-noise data already learned (median floor, upper percentile per bin if available).\n- Accessors: getMagnitudes(), getNumBins(), optional peak markers for 50/60 Hz and harmonics flags.\n- QualityMode Off freezes/clears updates;oth modes accept updates on message/analysis thread only.\n\nImplement AlignmentScopeData.h/.cpp:\n- Fixed-length waveform buffers for key onset and main onset windows; fixed correlation curve buffer; atomic/simple fields for selectedOffsetMs (or samples), confidence, offsetVariation, recommendedKeyDelay / mainLookahead.\n- setOnsetWaveforms / setCorrelationCurve / setResult APIs copy into preallocated storage.\n- Read APIs for GUI painting copyRecent-style without allocation.\n\nNeither class runs on the audio thread. No PluginProcessor wiring. Do not edit AnalysisFifo or PerformanceHistory sources. Do not edit CMakeLists or tests.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/Analysis/NoiseFingerprint.h and Source/Analysis/NoiseFingerprint.cpp exist",
+    "Source/Analysis/AlignmentScopeData.h and Source/Analysis/AlignmentScopeData.cpp exist",
+    "NoiseFingerprint exposes a fixed-bin time-averaged spectral magnitude buffer sized in prepare",
+    "NoiseFingerprint can ingest/update from a learned noise profile snapshot API",
+    "AlignmentScopeData stores key/main onset waveforms, correlation curve, offset, and confidence in fixed buffers",
+    "Both classes refuse heap allocation on steady-state update/read paths after prepare",
+    "QualityMode Off disables live updates for both units",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/Analysis/NoiseFingerprint.h",
+    "Source/Analysis/NoiseFingerprint.cpp",
+    "Source/Analysis/AlignmentScopeData.h",
+    "Source/Analysis/AlignmentScopeData.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/Analysis/AnalysisFifo.*",
+    "modify Source/Analysis/PerformanceHistory.*",
+    "modify Source/Analysis/AttackIntegrityAnalyzer.*",
+    "modify Source/Analysis/TailIntegrityAnalyzer.*",
+    "reimplement Noise Learn or DI cross-correlation DSP engines",
+    "implement tests/AnalysisTests.cpp",
+    "add non-JUCE third-party dependencies",
+    "perform analysis work on the audio thread"
+  ],
+  "allowed_symbols": [
+    "NoiseFingerprint",
+    "AlignmentScopeData",
+    "prepare",
+    "reset",
+    "updateFromLearnedProfile",
+    "setSpectrum",
+    "getMagnitudes",
+    "getNumBins",
+    "setOnsetWaveforms",
+    "setCorrelationCurve",
+    "setResult",
+    "getOffset",
+    "getConfidence",
+    "setQualityMode"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "choose fixed bin count (e.g. 64\u2013256) and document linear vs log spacing",
+      "copy external learned-profile arrays into internal buffers rather than owning FFT",
+      "use atomics for scalar offset/confidence if a GUI timer races updates",
+      "depend on QualityMode declared in AnalysisFifo.h"
+    ],
+    "forbidden": [
+      "wire PluginProcessor processBlock",
+      "own CMakeLists.txt",
+      "replace AlignmentAnalyzer / NoiseFloorEstimator DSP implementations",
+      "block audio thread waiting for spectrum or correlation"
+    ]
+  },
+  "dependencies": [
+    "h.1"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

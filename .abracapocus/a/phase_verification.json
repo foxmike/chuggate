@@ -1,0 +1,63 @@
+{
+  "verification": {
+    "checks": [
+      {
+        "name": "cmake-configure-presets-present",
+        "command": [
+          "test",
+          "-f",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmake-presets-present",
+        "command": [
+          "test",
+          "-f",
+          "CMakePresets.json"
+        ]
+      },
+      {
+        "name": "parameter-ids-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/ParameterIDs.h"
+        ]
+      },
+      {
+        "name": "processor-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/PluginProcessor.cpp"
+        ]
+      },
+      {
+        "name": "state-manager-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/StateManager.cpp"
+        ]
+      },
+      {
+        "name": "test-main-present",
+        "command": [
+          "test",
+          "-f",
+          "tests/TestMain.cpp"
+        ]
+      },
+      {
+        "name": "gitignore-build-ignored",
+        "command": [
+          "grep",
+          "-q",
+          "build",
+          ".gitignore"
+        ]
+      }
+    ]
+  }
+}

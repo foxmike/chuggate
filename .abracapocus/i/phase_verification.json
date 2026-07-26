@@ -1,0 +1,205 @@
+{
+  "verification": {
+    "checks": [
+      {
+        "name": "chug-look-and-feel-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/GUI/ChugLookAndFeel.cpp"
+        ]
+      },
+      {
+        "name": "performance-timeline-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/GUI/PerformanceTimeline.cpp"
+        ]
+      },
+      {
+        "name": "state-indicator-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/GUI/StateIndicator.cpp"
+        ]
+      },
+      {
+        "name": "perform-page-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/GUI/PerformPage.cpp"
+        ]
+      },
+      {
+        "name": "shape-page-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/GUI/ShapePage.cpp"
+        ]
+      },
+      {
+        "name": "detect-page-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/GUI/DetectPage.cpp"
+        ]
+      },
+      {
+        "name": "align-page-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/GUI/AlignPage.cpp"
+        ]
+      },
+      {
+        "name": "diagnose-page-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/GUI/DiagnosePage.cpp"
+        ]
+      },
+      {
+        "name": "main-header-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/GUI/MainHeader.cpp"
+        ]
+      },
+      {
+        "name": "plugin-editor-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/PluginEditor.cpp"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-chug-look-and-feel",
+        "command": [
+          "grep",
+          "-q",
+          "ChugLookAndFeel.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-performance-timeline",
+        "command": [
+          "grep",
+          "-q",
+          "PerformanceTimeline.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-state-indicator",
+        "command": [
+          "grep",
+          "-q",
+          "StateIndicator.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-perform-page",
+        "command": [
+          "grep",
+          "-q",
+          "PerformPage.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-shape-page",
+        "command": [
+          "grep",
+          "-q",
+          "ShapePage.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-detect-page",
+        "command": [
+          "grep",
+          "-q",
+          "DetectPage.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-align-page",
+        "command": [
+          "grep",
+          "-q",
+          "AlignPage.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-diagnose-page",
+        "command": [
+          "grep",
+          "-q",
+          "DiagnosePage.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-main-header",
+        "command": [
+          "grep",
+          "-q",
+          "MainHeader.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-plugin-editor",
+        "command": [
+          "grep",
+          "-q",
+          "PluginEditor.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "lookandfeel-derives-v4",
+        "command": [
+          "grep",
+          "-q",
+          "LookAndFeel_V4",
+          "Source/GUI/ChugLookAndFeel.h"
+        ]
+      },
+      {
+        "name": "editor-default-width-1280",
+        "command": [
+          "grep",
+          "-E",
+          "-q",
+          "1280",
+          "Source/PluginEditor.cpp"
+        ]
+      },
+      {
+        "name": "editor-min-width-920",
+        "command": [
+          "grep",
+          "-E",
+          "-q",
+          "920",
+          "Source/PluginEditor.cpp"
+        ]
+      }
+    ]
+  }
+}

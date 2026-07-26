@@ -1,0 +1,166 @@
+{
+  "verification": {
+    "checks": [
+      {
+        "name": "profiles-header-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/Profiles.h"
+        ]
+      },
+      {
+        "name": "profiles-source-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/Profiles.cpp"
+        ]
+      },
+      {
+        "name": "tuning-profiles-header-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/TuningProfiles.h"
+        ]
+      },
+      {
+        "name": "tuning-profiles-source-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/TuningProfiles.cpp"
+        ]
+      },
+      {
+        "name": "state-manager-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/StateManager.cpp"
+        ]
+      },
+      {
+        "name": "plugin-processor-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/PluginProcessor.cpp"
+        ]
+      },
+      {
+        "name": "plugin-editor-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/PluginEditor.cpp"
+        ]
+      },
+      {
+        "name": "preset-rhythm-modern-tight",
+        "command": [
+          "test",
+          "-f",
+          "Resources/Presets/Rhythm_ModernTight.json"
+        ]
+      },
+      {
+        "name": "preset-lead-singing-sustain",
+        "command": [
+          "test",
+          "-f",
+          "Resources/Presets/Lead_SingingSustain.json"
+        ]
+      },
+      {
+        "name": "preset-postamp-hiss",
+        "command": [
+          "test",
+          "-f",
+          "Resources/Presets/PostAmp_HissSuppression.json"
+        ]
+      },
+      {
+        "name": "preset-dikeyed-rhythm",
+        "command": [
+          "test",
+          "-f",
+          "Resources/Presets/DIKeyed_Rhythm.json"
+        ]
+      },
+      {
+        "name": "preset-bass-active",
+        "command": [
+          "test",
+          "-f",
+          "Resources/Presets/Bass_ActiveNoiseControl.json"
+        ]
+      },
+      {
+        "name": "preset-diag-learn",
+        "command": [
+          "test",
+          "-f",
+          "Resources/Presets/Diag_LearnMyRig.json"
+        ]
+      },
+      {
+        "name": "state-tests-present",
+        "command": [
+          "test",
+          "-f",
+          "tests/StateTests.cpp"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-profiles",
+        "command": [
+          "grep",
+          "-q",
+          "Profiles.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-tuning-profiles",
+        "command": [
+          "grep",
+          "-q",
+          "TuningProfiles.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "twelve-profiles-mentioned",
+        "command": [
+          "grep",
+          "-E",
+          "-q",
+          "Tight Rhythm|Lead Sustain|Distorted Bass",
+          "Source/Profiles.cpp"
+        ]
+      },
+      {
+        "name": "ab-slot-api-present",
+        "command": [
+          "grep",
+          "-E",
+          "-q",
+          "copyAtoB|switchActiveSlot",
+          "Source/StateManager.h"
+        ]
+      },
+      {
+        "name": "audition-wiring-present",
+        "command": [
+          "grep",
+          "-E",
+          "-q",
+          "rejectedMode|Rejected|audition",
+          "Source/PluginProcessor.cpp"
+        ]
+      }
+    ]
+  }
+}

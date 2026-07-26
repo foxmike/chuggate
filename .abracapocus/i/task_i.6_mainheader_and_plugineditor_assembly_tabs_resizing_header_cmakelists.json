@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "task_id": "i.6",
+  "phase": "I",
+  "phase_id": "i",
+  "title": "MainHeader and PluginEditor assembly \u2014 tabs, resizing, header, CMakeLists",
+  "description": "Fan-in GUI assembly: MainHeader + PluginEditor tabbed shell, resizing, wiring, and CMakeLists GUI sources (spec \u00a721.1, \u00a721.3).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a721.1 Window (default ~1280\u00d7760, min ~920\u00d7580, resizable, high-DPI)\n- .abracapocus/CHUGGATE_SPEC.md \u00a721.3 Main Layout (header strip, timeline, controls, expert/page area)\n- Existing Source/PluginEditor.h/.cpp skeleton from a.3 (ChugGateAudioProcessorEditor)\n- Source/PluginProcessor.h for analysis getters / APVTS / sidechain / latency / CPU hooks if present\n- All Source/GUI/* components from i.1\u2013i.5\n- CMakeLists.txt target_sources patterns from prior phases\n\nImplement MainHeader.h/.cpp:\n- Header Component: preset selector, profile selector, A/B controls, key source status, sidechain present/active indicator, Align/Learn shortcuts if not solely on Perform, Bypass, latency readout, CPU readout.\n- Wired via APVTS + callbacks into StateManager/processor methods without implementing preset DSP here.\n\nUpgrade Source/PluginEditor.h/.cpp:\n- Own ChugLookAndFeel (setDefaultLookAndFeel / setLookAndFeel) for the editor lifetime.\n- Host MainHeader, PerformanceTimeline, StateIndicator, and a tabbed container for Perform / Shape / Detect / Align / Diagnose pages.\n- Default size 1280\u00d7760; setResizeLimits(920, 580, \u2026); setResizable(true, \u2026) appropriate for plugin+standalone.\n- resized() layout matching \u00a721.3: header top, timeline (+ state indicator), active page body.\n- Wire analysis objects from processor into timeline/align/diagnose when accessors exist; timer to pump AnalysisFifo\u2192PerformanceHistory if that pumping is owned by the editor (only if processor does not already do it \u2014 prefer non-duplicating wiring).\n- Keyboard focus traversal enabled; no controls clipped at minimum size.\n\nCMakeLists.txt:\n- Sole owner this phase: add all new Source/GUI/*.cpp and ensure PluginEditor.cpp remains listed on plugin targets. Do not restructure unrelated targets beyond necessary source lines.\n\nDo NOT modify DSP modules or ParameterIDs.h except reader use.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/GUI/MainHeader.h and Source/GUI/MainHeader.cpp exist",
+    "Source/PluginEditor.h and Source/PluginEditor.cpp host MainHeader, PerformanceTimeline, StateIndicator, and tabbed Perform/Shape/Detect/Align/Diagnose pages",
+    "ChugGateAudioProcessorEditor default size is 1280x760 with minimum resize limit 920x580",
+    "Editor installs ChugLookAndFeel for its component hierarchy",
+    "CMakeLists.txt lists ChugLookAndFeel.cpp, PerformanceTimeline.cpp, StateIndicator.cpp, PerformPage.cpp, ShapePage.cpp, DetectPage.cpp, AlignPage.cpp, DiagnosePage.cpp, MainHeader.cpp, and PluginEditor.cpp for the plugin target",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/GUI/MainHeader.h",
+    "Source/GUI/MainHeader.cpp",
+    "Source/PluginEditor.h",
+    "Source/PluginEditor.cpp",
+    "CMakeLists.txt"
+  ],
+  "forbidden_changes": [
+    "modify Source/ParameterIDs.h",
+    "modify Source/Analysis/*",
+    "rewrite DSP modules under Source/DSP/*",
+    "restructure CMake beyond adding GUI/PluginEditor sources to existing targets",
+    "add non-JUCE third-party dependencies",
+    "change plugin bus layout or parameter tree definitions"
+  ],
+  "allowed_symbols": [
+    "MainHeader",
+    "ChugGateAudioProcessorEditor",
+    "resized",
+    "paint",
+    "timerCallback"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "TabbedComponent or custom text buttons switching owned page unique_ptrs",
+      "editor-owned ChugLookAndFeel unique_ptr",
+      "minimal processor accessor usage to inject analysis pointers into child components",
+      "append GUI .cpp paths to existing target_sources in CMakeLists.txt"
+    ],
+    "forbidden": [
+      "reimplement page control grids inside PluginEditor instead of hosting page components",
+      "delete or redesign APVTS parameter layout",
+      "broad CMake cleanups unrelated to GUI sources"
+    ]
+  },
+  "dependencies": [
+    "i.1",
+    "i.2",
+    "i.3",
+    "i.4",
+    "i.5"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

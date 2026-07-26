@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "task_id": "h.5",
+  "phase": "H",
+  "phase_id": "h",
+  "title": "Processor analysis FIFO push, CMakeLists",
+  "description": "Be the sole PluginProcessor + CMakeLists.txt owner for phase H. Push analysis frames into AnalysisFifo from processBlock (non-blocking), tick message-side consumers at a safe rate, and register all Analysis sources plus AnalysisTests.\n\nBefore editing, inspect:\n- Source/PluginProcessor.h/.cpp phase-G prepare/processBlock order and existing members\n- Source/Analysis/* public APIs from h.1\u2013h.4 (AnalysisFifo, PerformanceHistory, NoiseFingerprint, AlignmentScopeData, AttackIntegrityAnalyzer, TailIntegrityAnalyzer)\n- .abracapocus/CHUGGATE_SPEC.md \u00a720, \u00a728.1\u201328.2 (AbstractFifo transfer; drop frames; never block audio; disabled analyzers reduce CPU)\n- Existing CMakeLists.txt target_sources and test registration patterns from prior phases\n- Source/ParameterIDs.h for any analyzer quality / visual enable parameters if present\n\nPluginProcessor (realtime-safe push):\n- Members: AnalysisFifo plus (as needed for lifetime) PerformanceHistory, NoiseFingerprint, AlignmentScopeData, AttackIntegrityAnalyzer, TailIntegrityAnalyzer. Prefer owning the FIFO and drain on timer/AsyncUpdater/message callback; integrity analyzers and fingerprint/scope are message-thread only.\n- processBlock: after envelopes/state/gain are known for the block, fill AnalysisFrame from already-computed control values (key envelope, main envelope, thresholds, noise floor, state, gain, transient, sustain confidence, alignment offset if available). tryPush \u2014 if full or QualityMode Off, skip. Never allocate, lock, or call GUI from audio thread.\n- Quality modes Off/Live/Studio/Diagnose: Off disables push; Live may push every Nth block; Studio/Diagnose push more frequently (document). Disabling must reduce work materially (no heavy copies when Off).\n- prepareToPlay: prepare AnalysisFifo and any owned analysis units with fixed sizes. Optional Timer/AsyncUpdater drains FIFO \u2192 PerformanceHistory::pushFromFrame and optionally refresh NoiseFingerprint/AlignmentScopeData from existing learn/align snapshot getters when available.\n- Do NOT build Performance Timeline GUI components (phase I).\n\nCMakeLists.txt (phase-H sole owner):\n- Add AnalysisFifo.cpp, PerformanceHistory.cpp, NoiseFingerprint.cpp, AlignmentScopeData.cpp, AttackIntegrityAnalyzer.cpp, TailIntegrityAnalyzer.cpp to plugin/library target_sources\n- Register tests/AnalysisTests.cpp on the existing test executable/target (body filled in h.6)\n- Additive only \u2014 do not restructure unrelated targets\n\nDo NOT rewrite Analysis unit implementations (h.1\u2013h.4). Do NOT implement test bodies (h.6).\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/PluginProcessor.h/.cpp own and prepare AnalysisFifo and required analysis members",
+    "processBlock tryPushes AnalysisFrame data without blocking when QualityMode is not Off",
+    "QualityMode Off skips analysis push work",
+    "Message/timer path drains FIFO into PerformanceHistory (or documents equivalent consumer wiring)",
+    "CMakeLists.txt lists AnalysisFifo.cpp, PerformanceHistory.cpp, NoiseFingerprint.cpp, AlignmentScopeData.cpp, AttackIntegrityAnalyzer.cpp, and TailIntegrityAnalyzer.cpp",
+    "CMakeLists.txt registers tests/AnalysisTests.cpp on the test target",
+    "No heap allocation or mutex wait introduced on the audio path after prepareToPlay from analysis push",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/PluginProcessor.h",
+    "Source/PluginProcessor.cpp",
+    "CMakeLists.txt"
+  ],
+  "forbidden_changes": [
+    "modify Source/Analysis/AnalysisFifo.*",
+    "modify Source/Analysis/PerformanceHistory.*",
+    "modify Source/Analysis/NoiseFingerprint.*",
+    "modify Source/Analysis/AlignmentScopeData.*",
+    "modify Source/Analysis/AttackIntegrityAnalyzer.*",
+    "modify Source/Analysis/TailIntegrityAnalyzer.*",
+    "implement tests/AnalysisTests.cpp body",
+    "restructure unrelated CMake targets",
+    "add non-JUCE third-party dependencies",
+    "allocate or lock on the audio/process thread",
+    "implement Performance Timeline / Diagnose GUI components"
+  ],
+  "allowed_symbols": [
+    "ChugGateAudioProcessor",
+    "prepareToPlay",
+    "processBlock",
+    "releaseResources",
+    "analysisFifo",
+    "performanceHistory",
+    "noiseFingerprint",
+    "alignmentScopeData",
+    "attackIntegrityAnalyzer",
+    "tailIntegrityAnalyzer",
+    "timerCallback",
+    "handleAsyncUpdate"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "add member instances and includes for phase H analysis units on PluginProcessor",
+      "use juce::Timer or AsyncUpdater for FIFO drain on message thread",
+      "subsample Live mode pushes every N blocks",
+      "read QualityMode from APVTS when ParameterIDs exist, else default Live or Studio",
+      "add CMake target_sources for all phase H Analysis cpp files and AnalysisTests.cpp"
+    ],
+    "forbidden": [
+      "reimplement FIFO, history ring, fingerprint, scope, or integrity math inside PluginProcessor beyond API calls",
+      "own or rewrite Source/Analysis/* implementation files",
+      "expand scope into phase I GUI painting of the timeline",
+      "block audio thread if FIFO is full"
+    ]
+  },
+  "dependencies": [
+    "h.1",
+    "h.2",
+    "h.3",
+    "h.4"
+  ],
+  "task_timeout_seconds": 1200,
+  "verification_commands": []
+}

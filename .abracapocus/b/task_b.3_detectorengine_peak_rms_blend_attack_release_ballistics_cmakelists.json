@@ -1,0 +1,66 @@
+{
+  "schema_version": 1,
+  "task_id": "b.3",
+  "phase": "B",
+  "phase_id": "b",
+  "title": "DetectorEngine \u2014 peak/RMS blend, attack/release ballistics, CMakeLists",
+  "description": "Implement DetectorEngine (peak/RMS blend, detector attack/release ballistics, log level) and be the sole CMakeLists.txt owner for phase B DSP + detector tests registration.\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md section 6 (peak/RMS, ballistics, log level) \u2014 detector vs audible gain ballistics are SEPARATE\n- Source/DSP/KeySourceRouter.* and KeyConditioner/PowerlineShield.* headers from b.1/b.2 for include/link expectations\n- Existing CMakeLists.txt target_sources / test target patterns from phase A\n\nImplement Source/DSP/DetectorEngine.h/.cpp:\n- Peak: P[n] = max(|x[n]|, alpha_p * P[n-1])\n- Power/RMS: R\u00b2[n] = alpha_r * R\u00b2[n-1] + (1-alpha_r)*x\u00b2[n]; R[n]=sqrt(R\u00b2[n]+eps)\n- Combined envelope: E[n] = w_p * P[n] + (1-w_p) * R[n]\n- Attack/release ballistics on the detector envelope (NOT audible gain):\n  when |x| > Eprev: alpha_a; else alpha_r; alpha = exp(-1/(fs*tau))\n- Log level: L[n] = 20*log10(E[n]+eps) for stable dB-domain thresholds\n- prepare/reset/process mono key samples \u2192 linear envelope and dB level; realtime-safe\n- Optional hooks to accept pre-conditioned key and/or hum-immunity adjusted energy without owning those classes' internals\n\nUpdate CMakeLists.txt ONLY as phase-B sole owner:\n- Add KeySourceRouter.cpp, KeyConditioner.cpp, PowerlineShield.cpp, DetectorEngine.cpp to the plugin/library target_sources\n- Register tests/DetectorTests.cpp on the existing test executable/target (file may be filled in b.4)\n- Do not restructure unrelated targets or phase A sources beyond additive target_sources/test entries\n\nDo NOT implement the unit test body (b.4). Do NOT modify PluginProcessor wiring beyond what is strictly required to compile target_sources lists (prefer no PluginProcessor edits).\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/DetectorEngine.h and Source/DSP/DetectorEngine.cpp exist",
+    "DetectorEngine implements peak detector P[n]=max(|x[n]|, alpha_p*P[n-1])",
+    "DetectorEngine implements RMS/power path R\u00b2 recursion and R=sqrt(R\u00b2+eps)",
+    "DetectorEngine blends E[n]=w_p*P[n]+(1-w_p)*R[n]",
+    "DetectorEngine applies separate attack/release alphas alpha=exp(-1/(fs*tau)) on the detector envelope only",
+    "DetectorEngine exposes log level L[n]=20*log10(E[n]+eps)",
+    "CMakeLists.txt lists KeySourceRouter.cpp, KeyConditioner.cpp, PowerlineShield.cpp, and DetectorEngine.cpp on the plugin/library target",
+    "CMakeLists.txt registers tests/DetectorTests.cpp on the test target",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/DetectorEngine.h",
+    "Source/DSP/DetectorEngine.cpp",
+    "CMakeLists.txt"
+  ],
+  "forbidden_changes": [
+    "modify Source/DSP/KeySourceRouter.*",
+    "modify Source/DSP/KeyConditioner.*",
+    "modify Source/DSP/PowerlineShield.*",
+    "implement tests/DetectorTests.cpp body",
+    "implement audible gain/gate ballistics in DetectorEngine",
+    "modify Source/PluginProcessor.* processBlock DSP graph",
+    "add non-JUCE third-party dependencies"
+  ],
+  "allowed_symbols": [
+    "DetectorEngine",
+    "prepare",
+    "reset",
+    "process",
+    "setPeakWeight",
+    "setAttackTime",
+    "setReleaseTime",
+    "setPeakRelease",
+    "setRmsWindow",
+    "getEnvelope",
+    "getLevelDb"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "choose process sample-wise or block-wise with equivalent math",
+      "add CMake target_sources entries for all phase B DSP units and DetectorTests.cpp",
+      "keep detector ballistics fully separate from any future gain computer"
+    ],
+    "forbidden": [
+      "merge audible gain smoothing into DetectorEngine",
+      "rewrite entire CMake project structure",
+      "own key router/conditioner/shield source files"
+    ]
+  },
+  "dependencies": [
+    "b.1",
+    "b.2"
+  ],
+  "task_timeout_seconds": 1200,
+  "verification_commands": []
+}

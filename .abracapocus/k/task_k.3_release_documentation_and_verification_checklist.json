@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "task_id": "k.3",
+  "phase": "K",
+  "phase_id": "k",
+  "title": "Release documentation and verification checklist",
+  "description": "Author release verification documentation for ChugGate covering automated validation coverage and honest manual host-testing requirements (CHUGGATE_SPEC.md \u00a730\u2013\u00a731).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a730 Testing subsections and \u00a731 Release Criteria (full 'Ships when' list)\n- scripts/validate.sh produced by k.1 (what is automated vs still manual)\n- tests/ inventory and any host notes in README.md (read-only)\n- Phase deliverables A\u2013J for the phase summary\n\nCreate:\n1) docs/verification/chuggate_release.md\n- Title and purpose: release verification checklist mapped to \u00a731\n- How to run scripts/validate.sh (prereqs, expected PASS summary)\n- Checklist tables grouping \u00a731 / \u00a730 items into:\n  - Automated / CI-capable (build Release VST3+Standalone, ctest, RT-safety, zero-latency report 0, lookahead exact samples, bypass/state/multiband tests invoked by validate.sh)\n  - Manual host validation required (DI alignment in Bitwig/REAPER, missing sidechain safe, stereo image, rejected-signal audition per topology, analyzer does not interrupt audio, GUI min size / HiDPI, visuals disableable, offline render, project reopen, pluginval where not in CI)\n- For each manual item: pass criteria and host matrix notes (Bitwig Linux, REAPER Linux, REAPER Windows, standalone) without claiming CI coverage where none exists\n- Explicit statement that no online service is required\n- Links/relative paths to scripts/validate.sh and key test docs\n\n2) docs/verification/chuggate_phase_summary.md\n- Concise phase A\u2013K deliverable summary aligned with \u00a732 / plan skeleton\n- Note that phase K delivers validation script + release docs + refined factory presets\n- Point operators to chuggate_release.md for the ship checklist\n\nDo not edit C++, CMake, scripts, or preset JSON in this task.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "docs/verification/chuggate_release.md exists",
+    "docs/verification/chuggate_phase_summary.md exists",
+    "chuggate_release.md documents how to run scripts/validate.sh",
+    "chuggate_release.md includes a verification checklist covering CHUGGATE_SPEC.md \u00a731 release criteria",
+    "chuggate_release.md distinguishes automated/CI checks from manual host validation that cannot run in CI",
+    "chuggate_release.md lists host testing notes (Bitwig/REAPER/standalone) honestly as manual where applicable",
+    "chuggate_phase_summary.md summarizes phases A\u2013K deliverables and references the release checklist",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "pi_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "docs/verification/chuggate_release.md",
+    "docs/verification/chuggate_phase_summary.md"
+  ],
+  "forbidden_changes": [
+    "modify Source/**",
+    "modify scripts/**",
+    "modify CMakeLists.txt",
+    "modify tests/**",
+    "modify Resources/Presets/**",
+    "claim CI coverage for host-only checks that validate.sh cannot run"
+  ],
+  "allowed_symbols": [],
+  "decision_budget": {
+    "allowed": [
+      "structure checklists as markdown tables or nested lists",
+      "map each \u00a731 bullet to automated vs manual",
+      "summarize prior phases at a high level without re-litigating implementation detail"
+    ],
+    "forbidden": [
+      "change product DSP or parameters",
+      "invent green CI status for hosts not automated",
+      "add binary assets"
+    ]
+  },
+  "dependencies": [
+    "k.1"
+  ],
+  "task_timeout_seconds": 900,
+  "model": "openrouter/google/gemma-4-31b-it",
+  "verification_commands": []
+}

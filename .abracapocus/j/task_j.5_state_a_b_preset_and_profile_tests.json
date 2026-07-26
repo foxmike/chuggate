@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "task_id": "j.5",
+  "phase": "J",
+  "phase_id": "j",
+  "title": "State, A/B, preset, and profile tests",
+  "description": "Add focused unit tests for profiles/tuning catalogs, A/B state round-trip, factory preset JSON loadability, and basic audition parameter presence (CHUGGATE_SPEC.md \u00a722\u2013\u00a725, validation \u00a728 areas for preset/A-B/profile).\n\nBefore editing, inspect:\n- tests/TestMain.cpp and existing tests/* Catch2 (or project) patterns\n- Source/Profiles.h, Source/TuningProfiles.h APIs from j.1\n- Source/StateManager.h A/B APIs from j.2\n- Resources/Presets/*.json from j.3\n- ParameterIDs / audition IDs used by j.4 (read-only)\n- CMakeLists.txt test target already listing prior tests \u2014 prefer not editing CMake if tests/StateTests.cpp is already or auto-globbed; only write the test file unless registration is mandatory around prior conventions (if CMake must list the file, note dependency on j.4 having registered it; do not take CMake ownership here)\n\nImplement tests/StateTests.cpp:\n1) Profiles: getProfileCount() == 12; each index returns non-empty unique name matching \u00a723 set; applyProfileDefaults on a mock/APVTS or parameter map changes expected keys without throw\n2) TuningProfiles: factory tuning list non-empty; applyTuningAdjustments mutates only allowed fields (HPF/crossover/weighting/pitch/sustain/hum discrimination markers) on a test bag\n3) StateManager A/B: start from known params; copyAtoB; mutate A; switch B restores B snapshot; both slots serialize into ValueTree/XML with schema_version and reload\n4) Factory presets: each of the six expected JSON files exists under Resources/Presets/; juce::JSON::parse (or equivalent) succeeds; meta.name and parameters object present\n5) Crossfade/bypass API smoke: after switchActiveSlot, crossfade remaining samples > 0 until cleared; bypass helper toggles without throwing\n6) Keep tests deterministic; no audio hardware; no full plugin processBlock host required unless lightweight processor fixture already exists\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "tests/StateTests.cpp exists and registers multiple test cases",
+    "Profile tests assert exactly 12 profiles with unique non-empty names",
+    "Tuning tests assert factory tunings exist and applyTuningAdjustments runs without throw",
+    "A/B tests assert copy/switch/serialize-restore of slots including schema_version",
+    "Factory preset tests assert the six expected JSON files parse and contain meta + parameters",
+    "Crossfade or bypass API smoke assertions exist for StateManager helpers",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "pi_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "tests/StateTests.cpp"
+  ],
+  "forbidden_changes": [
+    "modify Source/** production code",
+    "modify CMakeLists.txt",
+    "modify Resources/Presets/* contents",
+    "add network or non-deterministic host-dependent tests",
+    "delete other test files"
+  ],
+  "allowed_symbols": [
+    "StateTests",
+    "Profiles",
+    "TuningProfiles",
+    "StateManager"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use Catch2 TEST_CASE sections matching prior tests style",
+      "build minimal APVTS or parameter map fixtures inline in the test file",
+      "locate presets relative to source tree or binary via juce File helpers"
+    ],
+    "forbidden": [
+      "re-implement profile tables inside the test file as production source of truth",
+      "require GUI/message-thread to run unit tests"
+    ]
+  },
+  "dependencies": [
+    "j.1",
+    "j.2",
+    "j.3",
+    "j.4"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": [],
+  "model": "openrouter/z-ai/glm-5.2"
+}

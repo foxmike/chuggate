@@ -1,0 +1,67 @@
+{
+  "schema_version": 1,
+  "task_id": "h.6",
+  "phase": "H",
+  "phase_id": "h",
+  "title": "Analysis data pipeline tests",
+  "description": "Add focused Catch2 (or existing project harness) unit tests covering AnalysisFifo SPSC drop behavior, PerformanceHistory duration/ring, NoiseFingerprint/AlignmentScopeData buffers, and Attack/Tail integrity ratios.\n\nBefore editing, inspect:\n- tests/TestMain.cpp and existing tests/* patterns from prior phases\n- Source/Analysis/* public APIs from h.1\u2013h.4\n- .abracapocus/CHUGGATE_SPEC.md \u00a720, \u00a728.2, Appendix A.4 A_r formula\n- CMakeLists.txt test registration from h.5 (do not re-own CMake \u2014 prefer zero CMake edits)\n\nImplement tests/AnalysisTests.cpp:\n1) AnalysisFifo: prepare small capacity; push until full; further tryPush returns false and does not block; tryPop drains in order; drop count increments when applicable; QualityMode Off path does not retain frames if push gated by mode on the unit under test.\n2) PerformanceHistory: setDurationSeconds within 2\u201330; push known sequences; copyRecent returns matching envelope/threshold/state/gain/transient/sustain series within tolerances; wrapping beyond capacity retains most recent.\n3) NoiseFingerprint: after prepare, setSpectrum/updateFromLearnedProfile fills getNumBins magnitudes; magnitude length matches bins.\n4) AlignmentScopeData: set onset waveforms + correlation + setResult(offset, confidence); getters echo values; buffer lengths fixed after prepare.\n5) AttackIntegrityAnalyzer: synthetic windows where y==x \u2192 A_r \u2248 1 preserved; y\u22480 with nonzero x \u2192 missed; intermediate \u2192 partial; counts update.\n6) TailIntegrityAnalyzer: synthetic main long decay + professionalized short output with high sustain confidence \u2192 choke flag/score elevated; matched decays \u2192 low choke.\n\nKeep tests deterministic (fixed lengths, explicit float tolerances). No audio hardware. Only write tests/AnalysisTests.cpp registered by h.5.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "tests/AnalysisTests.cpp exists and registers multiple test cases",
+    "FIFO tests assert non-blocking full-drop behavior and ordered pop",
+    "PerformanceHistory tests cover duration bounds and series copyRecent fidelity",
+    "NoiseFingerprint and AlignmentScopeData tests cover fixed buffer ingest and readback",
+    "AttackIntegrityAnalyzer tests assert A_r classification for preserved/partial/missed synthetics",
+    "TailIntegrityAnalyzer tests assert choke detection vs matched-decay baseline",
+    "tests are deterministic with explicit numeric tolerances",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "pi_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "tests/AnalysisTests.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/Analysis/AnalysisFifo.*",
+    "modify Source/Analysis/PerformanceHistory.*",
+    "modify Source/Analysis/NoiseFingerprint.*",
+    "modify Source/Analysis/AlignmentScopeData.*",
+    "modify Source/Analysis/AttackIntegrityAnalyzer.*",
+    "modify Source/Analysis/TailIntegrityAnalyzer.*",
+    "add non-JUCE third-party dependencies",
+    "depend on real-time audio devices or host plugins"
+  ],
+  "allowed_symbols": [
+    "AnalysisFifo",
+    "AnalysisFrame",
+    "QualityMode",
+    "PerformanceHistory",
+    "NoiseFingerprint",
+    "AlignmentScopeData",
+    "AttackIntegrityAnalyzer",
+    "TailIntegrityAnalyzer"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use Catch2 TEST_CASE/SECTION style matching existing tests",
+      "synthesize deterministic frame sequences and energy windows as fixtures",
+      "use float absolute/relative tolerances for A_r and buffer comparisons"
+    ],
+    "forbidden": [
+      "edit production Analysis or PluginProcessor sources",
+      "re-own CMakeLists.txt test registration",
+      "depend on real-time audio devices or host plugins"
+    ]
+  },
+  "dependencies": [
+    "h.1",
+    "h.2",
+    "h.3",
+    "h.4",
+    "h.5"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": [],
+  "model": "openrouter/z-ai/glm-5.2"
+}

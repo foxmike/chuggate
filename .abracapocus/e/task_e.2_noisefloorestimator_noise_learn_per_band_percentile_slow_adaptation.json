@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "task_id": "e.2",
+  "phase": "E",
+  "phase_id": "e",
+  "title": "NoiseFloorEstimator \u2014 noise learn, per-band percentile, slow adaptation",
+  "description": "Implement Source/DSP/NoiseFloorEstimator for Noise Learn workflow, per-band percentile noise-floor estimation, suggested threshold/hysteresis floors, and optional slow adaptation while confidently closed.\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md section 12 (workflow, noise-floor estimation, slow adaptation, profile display fields)\n- Source/DSP/DetectorEngine.* log-energy / envelope surfaces L or L_b\n- Source/ParameterIDs.h for noise-learn / threshold recommendation IDs if present\n- Existing Source/DSP/ prepare/reset/process style and any multiband band-count constants already in the project\n\nImplement NoiseFloorEstimator.h/.cpp per spec \u00a712:\n- Learn workflow state: Idle \u2192 Capturing (several seconds of observations while user is not playing) \u2192 Ready (suggestions available) \u2192 Applied/Frozen; support startLearn(), cancelLearn(), applySuggestions(), freeze(), resetProfile(). Capture must use preallocated ring/bucket storage sized in prepare(); no audio-thread heap growth.\n- For each band b (broadband + configured LF/MID/HF or project band count), collect log-energy observations L_b[t] and compute:\n  N_b = percentile_p({L_b[t]}) with p in [0.20, 0.50] (settable, default mid-range)\n  T_b = N_b + M_b where M_b is desired SNR margin (settable)\n- Build reviewable suggestions: open/close thresholds, hysteresis, high-band/Hiss floor, and hum-rejection enable hint flags from measured idle energy. Suggestions must NOT silently mutate live thresholds until applySuggestions() is called.\n- Optional slow adaptation while gate is confidently closed:\n  N_b[t] = lambda * N_b[t-1] + (1-lambda) * L_b[t]\n  Reject updates on transient activity, signal above noise model, harmonicity/sustain suggesting a musical note, or external-key-active conditions (inputs as process flags). Must not chase decaying notes.\n- Expose getters for broadband floor, per-band floors, confidence, capture duration, idle spike/intermittent indicators as cheap summary stats for later GUI (no GUI work here).\n- prepare(sampleRate, maxBlockSize)/reset(); realtime-safe observation path when capturing or slow-adapting.\n\nDo NOT implement CadenceTracker, AlignmentAnalyzer, or FractionalDelay. Do NOT edit PluginProcessor or CMakeLists.txt (e.4). Do NOT write tests (e.5).\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/NoiseFloorEstimator.h and Source/DSP/NoiseFloorEstimator.cpp exist",
+    "NoiseFloorEstimator supports Learn workflow states including capture, ready suggestions, apply, freeze, and reset",
+    "NoiseFloorEstimator computes per-band N_b = percentile_p(L_b) with p in [0.20, 0.50] and T_b = N_b + M_b",
+    "Suggested thresholds/hysteresis/floors are not applied to live parameters until applySuggestions() is invoked",
+    "Optional slow adaptation N_b[t] = lambda * N_b[t-1] + (1-lambda) * L_b[t] updates only when confidently closed and rejection conditions are false",
+    "No heap allocation in the per-block observation/adaptation path",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/NoiseFloorEstimator.h",
+    "Source/DSP/NoiseFloorEstimator.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/CadenceTracker.*",
+    "modify Source/DSP/AlignmentAnalyzer.*",
+    "modify Source/DSP/FractionalDelay.*",
+    "implement tests/CadenceTests.cpp or tests/AlignmentTests.cpp",
+    "implement Noise Fingerprint GUI",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread"
+  ],
+  "allowed_symbols": [
+    "NoiseFloorEstimator",
+    "prepare",
+    "reset",
+    "process",
+    "startLearn",
+    "cancelLearn",
+    "applySuggestions",
+    "freeze",
+    "resetProfile",
+    "setPercentile",
+    "setSnrMargin",
+    "setSlowAdaptEnabled",
+    "setSlowAdaptLambda",
+    "getBandFloor",
+    "getSuggestedOpenThreshold",
+    "getSuggestedCloseThreshold",
+    "getConfidence",
+    "getCaptureDurationSeconds",
+    "isLearning",
+    "hasSuggestions"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use plain C++20 + JUCE types already in the project",
+      "fixed-capacity observation buffers and band arrays sized in prepare",
+      "accept per-band log-energy and gate/closed/harmonicity/key-active flags as process inputs"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt target_sources",
+      "auto-apply learn results without an explicit apply API",
+      "FFT-heavy spectral analyzer required for v1 noise floor math"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

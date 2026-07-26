@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "task_id": "k.1",
+  "phase": "K",
+  "phase_id": "k",
+  "title": "Validation script \u2014 build, test, RT-safety, latency checks",
+  "description": "Create scripts/validate.sh \u2014 the single entry-point release validation script for ChugGate (CHUGGATE_SPEC.md \u00a730\u2013\u00a731).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a730 Testing and \u00a731 Release Criteria\n- scripts/build_all.sh and CMakePresets.json for existing build entry points\n- CMakeLists.txt ctest / PLUGINVAL / target names (read-only)\n- tests/ layout and any existing RT-safety or latency test binaries/names\n- Source/PluginProcessor latency reporting paths (read-only; do not edit DSP)\n\nImplement scripts/validate.sh as a bash script that:\n1. Builds Release (VST3 + Standalone) via existing CMake presets/scripts; fails non-zero on build failure\n2. Runs ctest (or the project\u2019s equivalent test runner) against the Release/test build\n3. Runs RT-safety checks: scan or invoke any existing no-alloc / audio-thread safety tests; if no dedicated binary exists, document the grep/check steps that flag new/delete, malloc, locks, or file I/O inside processBlock-related translation units and fail when violations are found in tracked Source paths\n4. Zero-latency verification: assert default/disabled lookahead path reports 0 samples latency\n5. Lookahead latency verification: for configured lookahead values in range 0\u201310 ms, assert reported host latency equals the exact sample count for the active sample rate (no hidden latency)\n6. Bypass click-free check hook: run or invoke the existing bypass/crossfade unit tests if present; otherwise invoke a named ctest filter or placeholder step that exits non-zero when those tests fail once available\n7. State round-trip: invoke state/preset round-trip tests (schema, A/B, noise profile, alignment)\n8. Multiband reconstruction flat: invoke multiband unity/reconstruction tests when present\n\nScript requirements:\n- set -euo pipefail (or equivalent safe defaults)\n- printable section headers and a final PASS/FAIL summary\n- exit 0 only when all enforced steps pass; non-zero otherwise\n- Prefer calling existing cmake --build / ctest rather than reimplementing build logic\n- Do not modify Source/**, CMakeLists.txt, or tests/** in this task\n- Make the script executable (chmod +x in the file\u2019s git mode or document #!/usr/bin/env bash)\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "scripts/validate.sh exists and begins with a bash shebang",
+    "scripts/validate.sh builds Release (VST3 and Standalone) via project CMake/presets and fails on build errors",
+    "scripts/validate.sh runs ctest or the project test runner",
+    "scripts/validate.sh includes RT-safety verification steps",
+    "scripts/validate.sh includes zero-latency (0 samples) verification when lookahead is off",
+    "scripts/validate.sh includes lookahead reported-latency checks for configured lookahead values",
+    "scripts/validate.sh includes hooks/steps for bypass click-free, state round-trip, and multiband reconstruction flat checks",
+    "scripts/validate.sh exits non-zero when any enforced step fails",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "pi_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "scripts/validate.sh"
+  ],
+  "forbidden_changes": [
+    "modify Source/**",
+    "modify CMakeLists.txt or CMakePresets.json",
+    "modify tests/**",
+    "modify DSP algorithms or PluginProcessor latency computation",
+    "add third-party dependencies",
+    "require online services or network calls"
+  ],
+  "allowed_symbols": [],
+  "decision_budget": {
+    "allowed": [
+      "call existing cmake presets and ctest from bash",
+      "use sectioned steps with clear PASS/FAIL summary",
+      "skip gracefully with explicit skip reason only for host-only checks that cannot run in CI, while still enforcing build/test/latency/RT steps that can run headlessly"
+    ],
+    "forbidden": [
+      "change plugin C++ sources",
+      "rewrite the build system",
+      "embed host-GUI automation as a hard CI requirement without a skip path"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "model": "openrouter/z-ai/glm-5.2",
+  "verification_commands": []
+}

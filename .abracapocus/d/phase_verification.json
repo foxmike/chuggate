@@ -1,0 +1,108 @@
+{
+  "verification": {
+    "checks": [
+      {
+        "name": "attack-guard-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/AttackGuard.cpp"
+        ]
+      },
+      {
+        "name": "fundamental-estimator-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/FundamentalEstimator.cpp"
+        ]
+      },
+      {
+        "name": "sustain-analyzer-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/SustainAnalyzer.cpp"
+        ]
+      },
+      {
+        "name": "feedback-detector-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/FeedbackDetector.cpp"
+        ]
+      },
+      {
+        "name": "attack-guard-tests-present",
+        "command": [
+          "test",
+          "-f",
+          "tests/AttackGuardTests.cpp"
+        ]
+      },
+      {
+        "name": "sustain-tests-present",
+        "command": [
+          "test",
+          "-f",
+          "tests/SustainTests.cpp"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-attack-guard",
+        "command": [
+          "grep",
+          "-q",
+          "AttackGuard.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-fundamental-estimator",
+        "command": [
+          "grep",
+          "-q",
+          "FundamentalEstimator.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-sustain-analyzer",
+        "command": [
+          "grep",
+          "-q",
+          "SustainAnalyzer.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-feedback-detector",
+        "command": [
+          "grep",
+          "-q",
+          "FeedbackDetector.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-attack-guard-tests",
+        "command": [
+          "grep",
+          "-q",
+          "AttackGuardTests.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-sustain-tests",
+        "command": [
+          "grep",
+          "-q",
+          "SustainTests.cpp",
+          "CMakeLists.txt"
+        ]
+      }
+    ]
+  }
+}

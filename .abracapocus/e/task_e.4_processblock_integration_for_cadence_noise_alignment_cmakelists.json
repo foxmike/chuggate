@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "task_id": "e.4",
+  "phase": "E",
+  "phase_id": "e",
+  "title": "processBlock integration for cadence, noise, alignment, CMakeLists",
+  "description": "Be the sole PluginProcessor + CMakeLists.txt owner for phase E. Wire CadenceTracker, NoiseFloorEstimator, AlignmentAnalyzer, and FractionalDelay into the processor prepare/process paths and register new DSP/test sources.\n\nBefore editing, inspect:\n- Source/PluginProcessor.h/.cpp phase-D wiring order (key/detector \u2192 AttackGuard \u2192 FundamentalEstimator \u2192 Sustain/Feedback \u2192 state machine \u2192 gain)\n- Source/DSP/CadenceTracker.*, NoiseFloorEstimator.*, AlignmentAnalyzer.*, FractionalDelay.* public APIs from e.1\u2013e.3\n- Existing CMakeLists.txt target_sources / test registration patterns from phases A\u2013D\n- .abracapocus/CHUGGATE_SPEC.md sections 11\u201313 for control flow and latency reporting intent\n- Source/ParameterIDs.h for cadence/noise-learn/align parameters if present\n\nPluginProcessor wiring (realtime-safe):\n- Members: CadenceTracker, NoiseFloorEstimator, AlignmentAnalyzer, FractionalDelay (key-path delay) plus existing phase D units.\n- prepareToPlay: prepare all phase-E units at sample rate / max block; size FractionalDelay for extended \u00b1100 ms capacity if API allows, default operational clamp \u00b125 ms until calibration/manual override.\n- processBlock order (conceptual extension of phase D):\n  1) existing key selection/conditioning\n  2) FractionalDelay on key path using accepted/manual alignment delay (Audio parameter or AlignmentAnalyzer accepted value)\n  3) existing detector \u2192 L\n  4) AttackGuard / FundamentalEstimator / Sustain / Feedback as already wired\n  5) CadenceTracker: feed valid onsets/attacks; combine tau_release_eff with SustainAnalyzer adaptive release via min() (or documented chain) before GainSmoother release use\n  6) NoiseFloorEstimator: observe per-band / broadband log-energy with closed/harmonicity/key-active flags; do not auto-apply suggestions\n  7) AlignmentAnalyzer: push key+main onset audio into preallocated capture rings only on audio thread; do not run full correlation on audio thread\n  8) existing PerformanceStateMachine \u2192 gain path\n- Expose or call non-realtime hooks for startLearn/applySuggestions and startAlign/acceptAlignment suitable for later editor binding (simple public methods on the processor are enough; no GUI).\n- Latency reporting: when negative DI skew requires main-path lookahead or lookahead delay is engaged, setLatencySamples to the exact main-path delay in samples; default mode remains 0. No hidden latency.\n- Read APVTS params via ParameterIDs when present; else safe defaults. No editor/GUI work.\n\nCMakeLists.txt (phase-E sole owner):\n- Add CadenceTracker.cpp, NoiseFloorEstimator.cpp, AlignmentAnalyzer.cpp, FractionalDelay.cpp to the plugin/library target_sources\n- Register tests/CadenceTests.cpp and tests/AlignmentTests.cpp on the existing test executable/target (bodies filled in e.5)\n- Additive only \u2014 do not restructure unrelated targets\n\nDo NOT implement test bodies (e.5). Do NOT reimplement DSP math inside PluginProcessor beyond calling unit APIs.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/PluginProcessor.h/.cpp construct and prepare CadenceTracker, NoiseFloorEstimator, AlignmentAnalyzer, and FractionalDelay",
+    "processBlock applies FractionalDelay on the key path before detector consumption when an alignment delay is set",
+    "CadenceTracker effective release constrains adaptive release used by the gain/release path (min with manual/sustain adaptive release)",
+    "NoiseFloorEstimator observes levels during process without auto-applying learn suggestions",
+    "AlignmentAnalyzer capture/push is wired without running full cross-correlation on the audio thread",
+    "Processor latency samples reflect main-path delay used for negative DI skew / lookahead and default to zero when unused",
+    "CMakeLists.txt lists CadenceTracker.cpp, NoiseFloorEstimator.cpp, AlignmentAnalyzer.cpp, and FractionalDelay.cpp on the plugin/library target",
+    "CMakeLists.txt registers tests/CadenceTests.cpp and tests/AlignmentTests.cpp on the test target",
+    "processBlock path performs no heap allocation attributable to this wiring",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/PluginProcessor.h",
+    "Source/PluginProcessor.cpp",
+    "CMakeLists.txt"
+  ],
+  "forbidden_changes": [
+    "modify Source/DSP/CadenceTracker.* implementations except via includes/calls",
+    "modify Source/DSP/NoiseFloorEstimator.* implementations except via includes/calls",
+    "modify Source/DSP/AlignmentAnalyzer.* implementations except via includes/calls",
+    "modify Source/DSP/FractionalDelay.* implementations except via includes/calls",
+    "implement tests/CadenceTests.cpp or tests/AlignmentTests.cpp bodies",
+    "implement PluginEditor Performance Timeline or Align/Learn UI",
+    "implement multiband Hiss Curtain DSP",
+    "add non-JUCE third-party dependencies",
+    "rewrite entire CMake project structure"
+  ],
+  "allowed_symbols": [
+    "ChugGateAudioProcessor",
+    "prepareToPlay",
+    "releaseResources",
+    "processBlock",
+    "setLatencySamples",
+    "CadenceTracker",
+    "NoiseFloorEstimator",
+    "AlignmentAnalyzer",
+    "FractionalDelay",
+    "startNoiseLearn",
+    "applyNoiseLearn",
+    "startAlignment",
+    "acceptAlignment",
+    "getEffectiveRelease"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "add member instances and includes for phase E DSP units on PluginProcessor",
+      "combine cadence and sustain adaptive release with min() or equivalent documented chain",
+      "read existing APVTS parameters by ParameterIDs when available, else temporary defaults",
+      "add CMake target_sources entries for phase E DSP units and CadenceTests/AlignmentTests",
+      "add thin public learn/align control methods on the processor for later editor binding"
+    ],
+    "forbidden": [
+      "reimplement cadence/noise/alignment/Lagrange math inside PluginProcessor",
+      "own or rewrite CadenceTracker/NoiseFloorEstimator/AlignmentAnalyzer/FractionalDelay source files",
+      "expand scope into GUI timeline, Noise Fingerprint panel, or multiband crossover"
+    ]
+  },
+  "dependencies": [
+    "e.1",
+    "e.2",
+    "e.3"
+  ],
+  "task_timeout_seconds": 1200,
+  "verification_commands": []
+}

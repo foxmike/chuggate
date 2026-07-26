@@ -1,0 +1,74 @@
+{
+  "verification": {
+    "checks": [
+      {
+        "name": "crossover-splitter-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/CrossoverSplitter.cpp"
+        ]
+      },
+      {
+        "name": "multiband-gate-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/MultibandGate.cpp"
+        ]
+      },
+      {
+        "name": "hiss-curtain-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/HissCurtain.cpp"
+        ]
+      },
+      {
+        "name": "multiband-gate-tests-present",
+        "command": [
+          "test",
+          "-f",
+          "tests/MultibandGateTests.cpp"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-crossover-splitter",
+        "command": [
+          "grep",
+          "-q",
+          "CrossoverSplitter.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-multiband-gate",
+        "command": [
+          "grep",
+          "-q",
+          "MultibandGate.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-hiss-curtain",
+        "command": [
+          "grep",
+          "-q",
+          "HissCurtain.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-multiband-gate-tests",
+        "command": [
+          "grep",
+          "-q",
+          "MultibandGateTests.cpp",
+          "CMakeLists.txt"
+        ]
+      }
+    ]
+  }
+}

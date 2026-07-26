@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "task_id": "i.1",
+  "phase": "I",
+  "phase_id": "i",
+  "title": "ChugLookAndFeel \u2014 gate-state accents, mechanical feel, correct JUCE overrides",
+  "description": "Implement Source/GUI/ChugLookAndFeel as the project LookAndFeel_V4 subclass driving the mechanical/precise visual identity (spec \u00a721.2).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a721.1\u201321.2 (window, visual identity: dark neutral base, bright gate-state accents, color-blind-safe state symbols, restrained animation)\n- .abracapocus/CHUGGATE_SPEC.md \u00a77.1 Performance State Engine states (for accent colors / state symbols)\n- Known JUCE API: juce::LookAndFeel_V4 override signatures only \u2014 do not invent undocumented LookAndFeel methods\n- Existing Source/PluginEditor.* skeleton for how L&F will later be owned\n\nImplement ChugLookAndFeel.h/.cpp:\n- Subclass juce::LookAndFeel_V4 with a suite-consistent dark palette (background, panel, outline, text, muted text).\n- Gate-state accent colors and optional monochrome/shape symbol helpers for CLOSED / OPEN / HOLD / ATTACK / SUSTAIN / RELEASE / FEEDBACK / (and any other engine states present in codebase enums).\n- Correct V4 overrides for rotary sliders, linear sliders, buttons, combo boxes, labels, tabs, and scrollbars so controls read as fast/mechanical/precise (sharp corners or tight radii, high-contrast tracks, restrained glow).\n- Public palette accessors (e.g. getStateColour, getKeyTraceColour, getAudioTraceColour, getThresholdColour) so timeline and indicator components can share colors without hard-coding hex.\n- Color-blind-safe: pair hue with distinct shape/character symbols where state is shown as a lamp/badge API helper.\n- No audio DSP, no APVTS attachments, no page composition.\n\nDo NOT implement PerformanceTimeline, StateIndicator, pages, MainHeader, PluginEditor wiring, or CMakeLists.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/GUI/ChugLookAndFeel.h and Source/GUI/ChugLookAndFeel.cpp exist",
+    "ChugLookAndFeel publicly derives from juce::LookAndFeel_V4",
+    "ChugLookAndFeel provides gate-state accent colour/symbol accessors usable by later GUI components",
+    "LookAndFeel_V4 drawing overrides for core controls (slider/button/combo/label/tab) are implemented in ChugLookAndFeel.cpp",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/GUI/ChugLookAndFeel.h",
+    "Source/GUI/ChugLookAndFeel.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginEditor.*",
+    "modify Source/PluginProcessor.*",
+    "implement PerformanceTimeline/StateIndicator/page components",
+    "add non-JUCE third-party dependencies",
+    "change ParameterIDs or APVTS layout"
+  ],
+  "allowed_symbols": [
+    "ChugLookAndFeel",
+    "getStateColour",
+    "getKeyTraceColour",
+    "getAudioTraceColour",
+    "getThresholdColour",
+    "getStateSymbol"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "override standard LookAndFeel_V4 drawing methods with a shared dark palette",
+      "define a compact gate-state colour table keyed by engine state enum or int",
+      "expose trace/threshold colours for timeline painters"
+    ],
+    "forbidden": [
+      "introduce custom GUI frameworks outside JUCE",
+      "own PluginEditor or CMakeLists target_sources",
+      "embed page layout or parameter attachment logic in LookAndFeel"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

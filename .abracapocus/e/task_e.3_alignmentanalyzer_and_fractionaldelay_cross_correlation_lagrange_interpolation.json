@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "task_id": "e.3",
+  "phase": "E",
+  "phase_id": "e",
+  "title": "AlignmentAnalyzer and FractionalDelay \u2014 cross-correlation, Lagrange interpolation",
+  "description": "Implement DI key alignment DSP: AlignmentAnalyzer (onset envelopes + normalized cross-correlation + calibration workflow) and FractionalDelay (preallocated circular buffer with third-order Lagrange interpolation for sub-sample key delay).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md section 13 (onset cross-correlation, delay direction, implementation range, calibration workflow, latency reporting intent)\n- Source/PluginProcessor.* / bus layout notes for key vs main path roles (read only)\n- Existing Source/DSP/ delay or buffer patterns if any; prepare/reset/process style\n\nImplement FractionalDelay.h/.cpp:\n- Preallocated mono circular buffer; prepare(sampleRate, maxDelayMs) allocates max capacity once (or constructor fixed max covering \u00b1100 ms at highest supported SR).\n- setDelayMs(delayMs) / setDelaySamples(fractionalSamples) with clamp to configured range (default \u00b125 ms operational, extended \u00b1100 ms capacity).\n- process sample- or block-wise with third-order Lagrange interpolation (4-point) for sub-sample precision. Integer-only path may short-circuit when fractional part ~0.\n- reset() clears buffer to zeros. No allocations in process(). Manual trim resolution supports 0.01 ms effective set precision.\n\nImplement AlignmentAnalyzer.h/.cpp per \u00a713.2\u201313.5:\n- Onset envelope from conditioned energy on key and audio:\n  p[n] = (1-alpha_p)*x\u00b2[n] + alpha_p*p[n-1]\n  E[n] = sqrt(p[n] + eps)\n  O[n] = max(0, E[n] - E[n-d])\n- Normalized cross-correlation R_KA[k] over a lag search window covering default \u00b125 ms (extended \u00b1100 ms optional); k* = argmax_k R_KA[k]; convert k* to milliseconds and delay direction (positive \u21d2 delay key path; negative \u21d2 main-path lookahead needed / warn flag).\n- Robust median across multiple onset-pair / block estimates with confidence and variation metrics.\n- Calibration workflow API: startAlign()/cancel()/accept() collecting while user plays muted and open notes. Heavy correlation over longer windows must be designed for off-audio-thread or control-rate completion (document/push work to processOfflineAnalysis() / finishCalibrationChunk()); audio-thread path only pushes preallocated onset samples into lock-free or single-producer fixed rings \u2014 no large heap correlation on the realtime path (risk_notes: cross-correlation off audio thread).\n- Expose recommended key delay ms, confidence, variation, needsMainLookahead flag.\n\nDo NOT edit PluginProcessor or CMakeLists.txt (e.4). Do NOT write tests (e.5). Do NOT implement CadenceTracker or NoiseFloorEstimator.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/FractionalDelay.h and Source/DSP/FractionalDelay.cpp exist",
+    "Source/DSP/AlignmentAnalyzer.h and Source/DSP/AlignmentAnalyzer.cpp exist",
+    "FractionalDelay uses a preallocated circular buffer and third-order Lagrange interpolation for fractional delays",
+    "FractionalDelay supports operational delay range covering at least \u00b125 ms with capacity up to \u00b1100 ms extended",
+    "AlignmentAnalyzer builds onset envelopes O[n] = max(0, E[n]-E[n-d]) from conditioned energy envelopes",
+    "AlignmentAnalyzer computes normalized cross-correlation R_KA[k], selects k* = argmax, and reports delay ms, confidence, and direction/lookahead-needed",
+    "Calibration workflow supports start/collect/accept (or equivalent) without applying delay until accepted",
+    "No heap allocation in FractionalDelay process path; AlignmentAnalyzer heavy correlation is not required to run fully on the audio thread",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/AlignmentAnalyzer.h",
+    "Source/DSP/AlignmentAnalyzer.cpp",
+    "Source/DSP/FractionalDelay.h",
+    "Source/DSP/FractionalDelay.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/CadenceTracker.*",
+    "modify Source/DSP/NoiseFloorEstimator.*",
+    "implement tests/CadenceTests.cpp or tests/AlignmentTests.cpp",
+    "implement DI Alignment Scope GUI",
+    "add non-JUCE third-party dependencies",
+    "allocate inside FractionalDelay::process"
+  ],
+  "allowed_symbols": [
+    "FractionalDelay",
+    "AlignmentAnalyzer",
+    "prepare",
+    "reset",
+    "process",
+    "setDelayMs",
+    "setDelaySamples",
+    "getDelayMs",
+    "startAlign",
+    "cancelAlign",
+    "acceptAlignment",
+    "processOfflineAnalysis",
+    "pushKeyAudio",
+    "getRecommendedDelayMs",
+    "getConfidence",
+    "getVariationMs",
+    "needsMainLookahead"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use plain C++20 + JUCE types already in the project",
+      "third-order (4-point) Lagrange interpolation in FractionalDelay v1.0",
+      "fixed-capacity onset rings + off-thread/control-rate correlation worker API on AlignmentAnalyzer",
+      "separate FractionalDelay instance ownership for key path delay"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt target_sources",
+      "GPU/FFTW dependency for correlation",
+      "change reported host latency semantics inside PluginProcessor (e.4 owns reporting hooks)"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 1200,
+  "verification_commands": []
+}

@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "task_id": "b.4",
+  "phase": "B",
+  "phase_id": "b",
+  "title": "Detector engine, key conditioning, and hum rejection tests",
+  "description": "Add focused Catch2 (or existing project test harness) unit tests covering key routing fallback, conditioning filters, Powerline Shield notches/auto-detect, and DetectorEngine math.\n\nBefore editing, inspect:\n- tests/TestMain.cpp and any existing tests/* patterns from phase A\n- Source/DSP/KeySourceRouter.*, KeyConditioner.*, PowerlineShield.*, DetectorEngine.* public APIs\n- .abracapocus/CHUGGATE_SPEC.md sections 4\u20136 formulas under test\n- CMakeLists.txt test target registration from b.3 (do not re-own CMake unless a test file path typo must match \u2014 prefer zero CMake edits)\n\nImplement tests/DetectorTests.cpp:\n1) KeySourceRouter: with no sidechain buffers/channels, external source selection activates internal fallback flags and does not treat missing SC as valid key.\n2) KeySourceRouter blend: mu=0 yields internal envelope, mu=1 external, mu=0.5 midpoint within tolerance on a constant-envelope fixture.\n3) KeyConditioner: HPF attenuates a sub-cutoff sine relative to a mid-band sine after settling (magnitude check).\n4) PowerlineShield: 60 Hz (or 50 Hz) notch attenuates a hum-tone fixture vs nearby musical tone; auto mode prefers the stronger hum fundamental on a biased fixture.\n5) Hum immunity: E_musical drops when E_hum is large for fixed E_key and eta.\n6) DetectorEngine: impulse/step fixture shows attack envelope rise; release after signal drop; peak-only vs rms-only weights differ as expected; log level near 20*log10(E+eps) for a known steady E.\n\nKeep tests deterministic (fixed SR, fixed lengths, explicit tolerances). No audio-thread requirements inside tests.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "tests/DetectorTests.cpp exists and registers multiple test cases for KeySourceRouter, KeyConditioner, PowerlineShield, and DetectorEngine",
+    "tests assert missing sidechain external routing sets internal fallback / does not silently accept empty external key",
+    "tests assert envelope blend endpoints mu=0 and mu=1 and a mid blend within stated tolerance",
+    "tests assert KeyConditioner HPF attenuates below-cutoff content relative to passband content",
+    "tests assert PowerlineShield notch attenuates hum fundamental and auto-detect selects the stronger of 50/60 on a biased fixture",
+    "tests assert DetectorEngine attack/release behavior and log level relationship L\u224820*log10(E+eps) on a steady fixture",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "pi_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "tests/DetectorTests.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/DSP/* production DSP implementations except via test includes",
+    "modify Source/PluginProcessor.*",
+    "add non-JUCE third-party test frameworks not already used by the project",
+    "network access or non-deterministic timing assertions"
+  ],
+  "allowed_symbols": [
+    "KeySourceRouter",
+    "KeyConditioner",
+    "PowerlineShield",
+    "DetectorEngine"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use the existing test framework from tests/TestMain.cpp",
+      "synthetic sine/impulse buffers at a fixed sample rate (e.g. 48000)",
+      "relative dB/magnitude tolerances rather than bit-exact equality"
+    ],
+    "forbidden": [
+      "reimplement DSP inside the test file",
+      "own CMakeLists.txt",
+      "require real audio hardware or host sidechain"
+    ]
+  },
+  "dependencies": [
+    "b.1",
+    "b.2",
+    "b.3"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": [],
+  "model": "openrouter/z-ai/glm-5.2"
+}

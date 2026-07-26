@@ -1,0 +1,108 @@
+{
+  "verification": {
+    "checks": [
+      {
+        "name": "cadence-tracker-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/CadenceTracker.cpp"
+        ]
+      },
+      {
+        "name": "noise-floor-estimator-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/NoiseFloorEstimator.cpp"
+        ]
+      },
+      {
+        "name": "alignment-analyzer-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/AlignmentAnalyzer.cpp"
+        ]
+      },
+      {
+        "name": "fractional-delay-present",
+        "command": [
+          "test",
+          "-f",
+          "Source/DSP/FractionalDelay.cpp"
+        ]
+      },
+      {
+        "name": "cadence-tests-present",
+        "command": [
+          "test",
+          "-f",
+          "tests/CadenceTests.cpp"
+        ]
+      },
+      {
+        "name": "alignment-tests-present",
+        "command": [
+          "test",
+          "-f",
+          "tests/AlignmentTests.cpp"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-cadence-tracker",
+        "command": [
+          "grep",
+          "-q",
+          "CadenceTracker.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-noise-floor-estimator",
+        "command": [
+          "grep",
+          "-q",
+          "NoiseFloorEstimator.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-alignment-analyzer",
+        "command": [
+          "grep",
+          "-q",
+          "AlignmentAnalyzer.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-fractional-delay",
+        "command": [
+          "grep",
+          "-q",
+          "FractionalDelay.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-cadence-tests",
+        "command": [
+          "grep",
+          "-q",
+          "CadenceTests.cpp",
+          "CMakeLists.txt"
+        ]
+      },
+      {
+        "name": "cmakelists-lists-alignment-tests",
+        "command": [
+          "grep",
+          "-q",
+          "AlignmentTests.cpp",
+          "CMakeLists.txt"
+        ]
+      }
+    ]
+  }
+}

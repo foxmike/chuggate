@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "task_id": "e.1",
+  "phase": "E",
+  "phase_id": "e",
+  "title": "CadenceTracker \u2014 onset intervals, median estimate, release constraint",
+  "description": "Implement Source/DSP/CadenceTracker as a real-time-safe Riff Cadence Engine unit that estimates recent onset spacing and constrains adaptive release so the gate can close before the next expected attack without tempo quantization.\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md section 11 (onset interval estimate, release constraint, controls)\n- Source/DSP/AttackGuard.* and Source/DSP/PerformanceStateMachine.* for onset/attack event surfaces cadence will consume later\n- Source/DSP/SustainAnalyzer.* adaptive-release API patterns from phase D\n- Existing Source/DSP/ header style (prepare/reset/process, realtime-safe fixed storage)\n- Source/ParameterIDs.h for any cadence/release-related IDs if present\n\nImplement CadenceTracker.h/.cpp per spec \u00a711:\n- Accept onset/attack event times (sample timestamps or block-local flags with running sample counter). Maintain a fixed-length circular history of recent inter-onset intervals:\n  delta_i = t_i - t_{i-1}\n- Robust interval estimate I = median of the most recent k valid deltas; reject outliers (e.g. drop intervals outside a ratio band of the current median or absolute clamps for musically plausible pick rates).\n- Release constraint (does not quantize playing):\n  tau_release_max = c * I with c in [0.15, 0.85] (settable)\n  tau_release_eff = min(tau_manual, tau_release_max)\n  Expose getIntervalSeconds(), getReleaseConstraintSeconds(), getEffectiveRelease(tau_manual), and a confidence/validity flag when history is insufficient.\n- Controls / mode: Audio cadence, Host tempo, Combined, Off. Host-tempo path may accept BPM + subdivision factory defaults without owning transport plumbing in the processor yet. Off bypasses constraint (return tau_manual unchanged).\n- prepare(sampleRate)/reset(); process or noteOnset()/tick APIs must be allocation-free on the audio path. Fixed-capacity interval buffer only.\n\nDo NOT implement NoiseFloorEstimator, AlignmentAnalyzer, or FractionalDelay. Do NOT edit PluginProcessor or CMakeLists.txt (e.4 owns integration). Do NOT write tests (e.5).\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/CadenceTracker.h and Source/DSP/CadenceTracker.cpp exist",
+    "CadenceTracker records inter-onset intervals delta_i = t_i - t_{i-1} in fixed-capacity storage",
+    "CadenceTracker computes robust median interval I from recent deltas with outlier rejection",
+    "CadenceTracker implements tau_release_max = c * I (c in [0.15, 0.85]) and tau_release_eff = min(tau_manual, tau_release_max)",
+    "CadenceTracker supports cadence modes Audio, Host tempo, Combined, and Off",
+    "No heap allocation in the per-block / onset-process path",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/CadenceTracker.h",
+    "Source/DSP/CadenceTracker.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/NoiseFloorEstimator.*",
+    "modify Source/DSP/AlignmentAnalyzer.*",
+    "modify Source/DSP/FractionalDelay.*",
+    "implement tests/CadenceTests.cpp or tests/AlignmentTests.cpp",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread"
+  ],
+  "allowed_symbols": [
+    "CadenceTracker",
+    "prepare",
+    "reset",
+    "process",
+    "noteOnset",
+    "setMode",
+    "setConstraintFactor",
+    "setHostTempoBpm",
+    "getIntervalSeconds",
+    "getReleaseConstraintSeconds",
+    "getEffectiveRelease",
+    "isEstimateValid"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use plain C++20 + JUCE types already in the project",
+      "fixed-size circular interval history owned by CadenceTracker",
+      "accept onset flags/timestamps and optional host BPM as inputs"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt target_sources",
+      "implement MIDI clock / host transport ownership",
+      "quantize note timing or force tempo grid snap"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

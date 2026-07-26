@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "task_id": "b.2",
+  "phase": "B",
+  "phase_id": "b",
+  "title": "KeyConditioner and PowerlineShield \u2014 HPF/LPF/emphasis, hum notches, auto-detect",
+  "description": "Implement key-path pre-conditioning and Powerline Shield as audio-thread-safe DSP units that never alter audible tone (key path only).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md sections 5.1\u20135.6 (HPF/LPF, emphasis, Powerline Shield coeffs, hum immunity, key listen)\n- Source/ParameterIDs.h key filter / hum / listenMode IDs\n- Source/DSP/KeySourceRouter.* API shape from b.1 if present (for naming consistency only)\n\nImplement Source/DSP/KeyConditioner.h/.cpp:\n- Adjustable HPF 20\u2013250 Hz, 12 or 24 dB/oct (cascaded biquads for 24).\n- Optional LPF 1.5\u201320 kHz, 12 or 24 dB/oct.\n- Detector emphasis: broad bell/bandpass with frequency, bandwidth/Q, gain; optional solo-key-path flag for listen routing helpers.\n- Key listen mode selectors for audition routing metadata: raw key, conditioned key (aligned/transient/sustain hooks may be stubs/enums for later phases).\n- prepare/reset/process mono key buffer in place or to an output buffer; coefficient updates smoothed or done on param change off the hot path as needed, no allocations in process.\n\nImplement Source/DSP/PowerlineShield.h/.cpp:\n- Hum rejection notches at 50 Hz or 60 Hz mode plus off/auto; first harmonic required, optional 2nd/3rd harmonics; adjustable Q.\n- Standard notch biquad from spec:\n  w0=2*pi*f0/fs; alpha=sin(w0)/(2*Q);\n  b0=1, b1=-2*cos(w0), b2=1; a0=1+alpha, a1=-2*cos(w0), a2=1-alpha.\n- Auto-detect compares energy near 50 vs 60 Hz and checks harmonic consistency; expose chosen mode + confidence.\n- Hum immunity estimate for detector confidence:\n  E_musical = max(0, E_key - eta * E_hum) with configurable eta.\n- process applies notches to key path only.\n\nDo NOT edit CMakeLists.txt (b.3 owns it). Do NOT implement KeySourceRouter or DetectorEngine.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/KeyConditioner.h and Source/DSP/KeyConditioner.cpp exist",
+    "Source/DSP/PowerlineShield.h and Source/DSP/PowerlineShield.cpp exist",
+    "KeyConditioner provides HPF 20\u2013250 Hz at 12/24 dB/oct, optional LPF 1.5\u201320 kHz at 12/24 dB/oct, and emphasis bell/bandpass controls",
+    "KeyConditioner exposes key listen mode selection metadata for raw/conditioned (and stub enums for later key types)",
+    "PowerlineShield implements 50/60/off/auto hum notches with fundamental plus optional 2nd/3rd harmonics using the specified biquad coefficients",
+    "PowerlineShield auto-detect compares 50 Hz vs 60 Hz energy with harmonic consistency and reports confidence",
+    "PowerlineShield provides hum-immunity E_musical = max(0, E_key - eta * E_hum)",
+    "No heap allocation in per-block process paths",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/KeyConditioner.h",
+    "Source/DSP/KeyConditioner.cpp",
+    "Source/DSP/PowerlineShield.h",
+    "Source/DSP/PowerlineShield.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/KeySourceRouter.*",
+    "modify Source/DSP/DetectorEngine.*",
+    "apply conditioning to the audible output path",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread"
+  ],
+  "allowed_symbols": [
+    "KeyConditioner",
+    "PowerlineShield",
+    "HumMode",
+    "KeyListenMode",
+    "prepare",
+    "reset",
+    "process",
+    "setHpf",
+    "setLpf",
+    "setEmphasis",
+    "setHumMode",
+    "setHumHarmonics",
+    "setHumNotchQ",
+    "setHumImmunityAmount",
+    "getDetectedHumHz",
+    "getHumConfidence",
+    "computeMusicalEnergy"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "implement biquads manually or with juce::IIRFilter / juce::dsp::IIR",
+      "cascade two 12 dB stages for 24 dB/oct",
+      "keep auto-detect analysis on a slow path / decimated counters while notches stay per-sample"
+    ],
+    "forbidden": [
+      "change audible main-path EQ",
+      "own CMakeLists.txt",
+      "implement peak/RMS DetectorEngine ballistics here"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 1200,
+  "verification_commands": []
+}

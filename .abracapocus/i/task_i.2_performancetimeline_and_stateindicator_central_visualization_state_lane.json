@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "task_id": "i.2",
+  "phase": "I",
+  "phase_id": "i",
+  "title": "PerformanceTimeline and StateIndicator \u2014 central visualization, state lane",
+  "description": "Implement the central Performance Timeline and State Indicator diagnostics (spec \u00a720.1, \u00a720.4) as Component subclasses that render analysis history on the message thread.\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a720.1 Performance Timeline lanes and attenuation shading\n- .abracapocus/CHUGGATE_SPEC.md \u00a720.4 State Indicator content (state, duration, gain, reason, active protection)\n- Source/Analysis/PerformanceHistory.h (copyRecent / getNumSamples / pushFromFrame API from h.2)\n- Source/Analysis/AnalysisFifo.h AnalysisFrame / gate state fields if present\n- Source/GUI/ChugLookAndFeel.h palette/state accessors from i.1\n\nImplement PerformanceTimeline.h/.cpp:\n- juce::Component that paints horizontal recent-time view from a PerformanceHistory pointer/reference set by the editor (null-safe empty paint).\n- Lanes/overlays at minimum: conditioned key envelope, main audio envelope, open + close thresholds, noise-floor estimate, transient markers, sustain confidence, gate state lane, output gain, attenuation shading between unprocessed and gated gain; optional lookahead region and alignment offset if history slots expose them.\n- Layer visibility booleans (or small LayerFlags) for later analyzer-mode wiring; timer/async refresh suitable for Live/Studio paint rates without touching the audio thread.\n- Uses ChugLookAndFeel colours when available via findColour / dynamic_cast LookAndFeel.\n\nImplement StateIndicator.h/.cpp:\n- Compact badge/readout Component showing current state name, duration in state, current gain (dB), reason string, and active protection flags (e.g. Attack Guard, Feedback Friend) via a small snapshot POD/setter updated from the message thread.\n- Example display forms from spec: \"OPEN \u2014 Pick transient\", \"SUSTAIN \u2014 Harmonic tail\", etc.\n- Color-blind-safe: use LookAndFeel state symbol + text, not colour alone.\n\nDo NOT implement pages, MainHeader, PluginEditor assembly, CMakeLists, or analysis producers.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/GUI/PerformanceTimeline.h and Source/GUI/PerformanceTimeline.cpp exist",
+    "Source/GUI/StateIndicator.h and Source/GUI/StateIndicator.cpp exist",
+    "PerformanceTimeline is a juce::Component that can source series data from PerformanceHistory (pointer/ref + null-safe empty state)",
+    "PerformanceTimeline paint path covers key/main envelopes, open/close thresholds, noise floor, gate state lane, and output gain/attenuation",
+    "StateIndicator displays current state, duration, gain, and reason via a message-thread snapshot/setter API",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/GUI/PerformanceTimeline.h",
+    "Source/GUI/PerformanceTimeline.cpp",
+    "Source/GUI/StateIndicator.h",
+    "Source/GUI/StateIndicator.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginEditor.*",
+    "modify Source/PluginProcessor.*",
+    "modify Source/GUI/ChugLookAndFeel.*",
+    "modify Source/Analysis/*",
+    "implement PerformPage/ShapePage/DetectPage/AlignPage/DiagnosePage/MainHeader",
+    "add non-JUCE third-party dependencies",
+    "read or write audio on the message paint path via locks that can block the audio thread"
+  ],
+  "allowed_symbols": [
+    "PerformanceTimeline",
+    "StateIndicator",
+    "setHistory",
+    "setLayerVisible",
+    "setStateSnapshot",
+    "StateSnapshot",
+    "timerCallback",
+    "paint",
+    "resized"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "timer-driven repaint pulling copyRecent into member path buffers",
+      "define a small StateSnapshot POD for indicator updates",
+      "optional layer visibility flags matching analyzer modes"
+    ],
+    "forbidden": [
+      "own CMakeLists or PluginEditor tab hosting",
+      "mutate PerformanceHistory capacity from the GUI",
+      "implement DI alignment scope or noise fingerprint drawings here"
+    ]
+  },
+  "dependencies": [
+    "i.1"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

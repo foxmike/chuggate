@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "task_id": "b.1",
+  "phase": "B",
+  "phase_id": "b",
+  "title": "KeySourceRouter \u2014 source selection, envelope blending, confidence, fallback",
+  "description": "Implement Source/DSP/KeySourceRouter as a real-time-safe key-path router (no allocations in process/processBlock paths).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md sections 4.1\u20134.3 (sources, envelope blending, confidence)\n- Source/ParameterIDs.h key-source / externalBlend / fallbackMode IDs from phase A\n- Source/PluginProcessor.* bus layout for main vs sidechain channel counts\n- Existing Source/DSP/ conventions if present\n\nImplement KeySourceRouter.h/.cpp:\n- Source selection enum covering: main, external sidechain, blended main+external, left, right, stereo max, stereo average, mid, side.\n- prepare(sampleRate, maxBlockSize, numMainChannels, numSidechainChannels) reset; process pointer/channel API that builds a mono key sample stream for the chosen source.\n- Envelope blending for unrelated paths (default when blending main+external envelopes):\n  E_K[n] = (1 - mu) * E_I[n] + mu * E_E[n], mu in [0,1] from externalBlend.\n- Source confidence / status flags the UI will consume: externalPresent, externalSilent, channelMismatch, lowConfidence, internalFallbackActive, alignmentNotCalibrated.\n- Never silently treat a missing or empty sidechain as a valid external key: when external is selected/required but unavailable, apply configured fallbackMode to internal main and raise internalFallbackActive (and lowConfidence as appropriate).\n- Keep all DSP real-time safe (no heap alloc, no locks, no logging on audio thread).\n\nDo NOT edit CMakeLists.txt (b.3 owns it). Do NOT implement KeyConditioner, PowerlineShield, or DetectorEngine.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/KeySourceRouter.h and Source/DSP/KeySourceRouter.cpp exist",
+    "KeySourceRouter supports main, external, blended main+external, left, right, stereo max, stereo average, mid, and side source modes",
+    "KeySourceRouter implements envelope blend E_K = (1-mu)*E_I + mu*E_E with mu in [0,1]",
+    "KeySourceRouter exposes confidence/status flags including external present/silent, channel mismatch, low confidence, and internal fallback active",
+    "Missing or silent sidechain never silently counts as a valid external key; fallback to internal is explicit via flags/mode",
+    "No heap allocation in the per-block process path",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/KeySourceRouter.h",
+    "Source/DSP/KeySourceRouter.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/ParameterIDs.h",
+    "implement KeyConditioner, PowerlineShield, or DetectorEngine",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread"
+  ],
+  "allowed_symbols": [
+    "KeySourceRouter",
+    "KeySource",
+    "KeySourceStatus",
+    "prepare",
+    "reset",
+    "process",
+    "setSource",
+    "setExternalBlend",
+    "setFallbackMode",
+    "getStatus"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use plain C++20 + JUCE types already in the project",
+      "define key source and fallback enums/structs in the KeySourceRouter headers",
+      "compute simple per-block or per-sample internal/external envelopes for blending only"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt target_sources",
+      "implement hum notches or peak/RMS detector ballistics here"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

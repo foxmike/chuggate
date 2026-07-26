@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "task_id": "d.4",
+  "phase": "D",
+  "phase_id": "d",
+  "title": "State machine integration \u2014 AttackGuard/Sustain/Feedback wiring, CMakeLists",
+  "description": "Be the sole PerformanceStateMachine + PluginProcessor + CMakeLists.txt owner for phase D. Wire AttackGuard, FundamentalEstimator, SustainAnalyzer, and FeedbackDetector into the performance engine and processBlock path, and register new DSP/test sources.\n\nBefore editing, inspect:\n- Source/DSP/PerformanceStateMachine.* public API from phase C (transient/sustain/protection inputs, states, reopen)\n- Source/DSP/AttackGuard.*, FundamentalEstimator.*, SustainAnalyzer.*, FeedbackDetector.* prepare/process APIs from d.1\u2013d.3\n- Source/PluginProcessor.h/.cpp phase-C detector \u2192 state machine \u2192 gain wiring\n- Existing CMakeLists.txt target_sources / test patterns from phases A\u2013C\n- .abracapocus/CHUGGATE_SPEC.md sections 8\u201310 for intended control flow\n\nPerformanceStateMachine integration:\n- Accept AttackGuard validAttack / thresholdReduction (or open-assist score) to bias Primed/Attack/Reopen and temporarily lower effective T_open within max reduction clamps.\n- Accept SustainAnalyzer S_sustain / sustainProtectionActive to hold Sustain state and extend release (pass adaptive tau_release_eff through to consumers or store last adaptive release for GainSmoother).\n- Accept FeedbackDetector protectOpen / feedbackActive with safety already enforced in FeedbackDetector \u2014 machine must still honor protection end when feedback clears or safety ends.\n- Keep dual-threshold hysteresis and 8-state semantics from phase C; do not flatten states.\n- Realtime-safe process path only.\n\nPluginProcessor wiring (realtime-safe):\n- Members: AttackGuard, FundamentalEstimator, SustainAnalyzer, FeedbackDetector (plus existing DetectorEngine / PerformanceStateMachine / gain path).\n- prepareToPlay: prepare all phase-D units at sample rate / max block size.\n- processBlock order (conceptual):\n  1) existing key/detector \u2192 L\n  2) AttackGuard on key + L \u2192 validAttack / threshold assist\n  3) FundamentalEstimator on key (control hop) \u2192 f0 snapshot\n  4) SustainAnalyzer + FeedbackDetector from f0 + L (+ transient density)\n  5) PerformanceStateMachine with L, attack, sustain, feedback protection\n  6) existing GainComputer / GainSmoother using adaptive release when available\n- Read APVTS AttackGuard/Sustain/Feedback params via ParameterIDs when present; else clear defaults. No editor/GUI work.\n\nCMakeLists.txt (phase-D sole owner):\n- Add AttackGuard.cpp, FundamentalEstimator.cpp, SustainAnalyzer.cpp, FeedbackDetector.cpp to the plugin/library target_sources\n- Register tests/AttackGuardTests.cpp and tests/SustainTests.cpp on the existing test executable/target (bodies filled in d.5)\n- Additive only \u2014 do not restructure unrelated targets or rewrite prior phase source lists beyond necessary additions\n\nDo NOT implement test bodies (d.5). Do NOT reimplement DSP math inside PluginProcessor beyond calling the unit APIs.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "PerformanceStateMachine consumes AttackGuard attack/threshold-assist, SustainAnalyzer sustain score/protection, and FeedbackDetector protect/open signals",
+    "Source/PluginProcessor.h/.cpp construct and prepare AttackGuard, FundamentalEstimator, SustainAnalyzer, and FeedbackDetector",
+    "processBlock advances key/detector \u2192 AttackGuard \u2192 FundamentalEstimator \u2192 SustainAnalyzer/FeedbackDetector \u2192 PerformanceStateMachine before gain application",
+    "Adaptive release from SustainAnalyzer can influence release timing path (state machine and/or gain smoother inputs)",
+    "CMakeLists.txt lists AttackGuard.cpp, FundamentalEstimator.cpp, SustainAnalyzer.cpp, and FeedbackDetector.cpp on the plugin/library target",
+    "CMakeLists.txt registers tests/AttackGuardTests.cpp and tests/SustainTests.cpp on the test target",
+    "processBlock path performs no heap allocation attributable to this wiring",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/PerformanceStateMachine.h",
+    "Source/DSP/PerformanceStateMachine.cpp",
+    "Source/PluginProcessor.h",
+    "Source/PluginProcessor.cpp",
+    "CMakeLists.txt"
+  ],
+  "forbidden_changes": [
+    "modify Source/DSP/AttackGuard.* implementations except via includes/calls",
+    "modify Source/DSP/FundamentalEstimator.* implementations except via includes/calls",
+    "modify Source/DSP/SustainAnalyzer.* implementations except via includes/calls",
+    "modify Source/DSP/FeedbackDetector.* implementations except via includes/calls",
+    "implement tests/AttackGuardTests.cpp or tests/SustainTests.cpp bodies",
+    "implement PluginEditor Performance Timeline UI",
+    "implement Riff Cadence Engine or Noise Learn",
+    "add non-JUCE third-party dependencies",
+    "rewrite entire CMake project structure"
+  ],
+  "allowed_symbols": [
+    "ChugGateAudioProcessor",
+    "prepareToPlay",
+    "releaseResources",
+    "processBlock",
+    "PerformanceStateMachine",
+    "AttackGuard",
+    "FundamentalEstimator",
+    "SustainAnalyzer",
+    "FeedbackDetector",
+    "setSustainProtection",
+    "setAttackAssist",
+    "setFeedbackProtection",
+    "getAdaptiveRelease"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "extend PerformanceStateMachine input surface for attack/sustain/feedback without changing the 8-state enum order",
+      "add member instances and includes for phase D DSP units on PluginProcessor",
+      "read existing APVTS parameters by ParameterIDs when available, else temporary defaults",
+      "add CMake target_sources entries for phase D DSP units and AttackGuardTests/SustainTests"
+    ],
+    "forbidden": [
+      "reimplement AttackGuard/Sustain/Feedback math inside PluginProcessor",
+      "own or rewrite AttackGuard/FundamentalEstimator/SustainAnalyzer/FeedbackDetector source files",
+      "expand scope into Cadence, Noise Learn, multiband Hiss Curtain, or GUI timeline"
+    ]
+  },
+  "dependencies": [
+    "d.1",
+    "d.2",
+    "d.3"
+  ],
+  "task_timeout_seconds": 1200,
+  "verification_commands": []
+}

@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "task_id": "c.1",
+  "phase": "C",
+  "phase_id": "c",
+  "title": "PerformanceStateMachine \u2014 8 states, dual-threshold hysteresis, reopen",
+  "description": "Implement Source/DSP/PerformanceStateMachine as a real-time-safe 8-state performance engine with dual-threshold hysteresis and smooth Reopen (no allocations/locks/logging on the process path).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md section 7 (states, T_close = T_open - H, soft decision region, Reopen)\n- Source/DSP/DetectorEngine.* public API for L[n] / envelope inputs this machine will consume later\n- Source/ParameterIDs.h threshold / hysteresis / hold-related IDs from phase A if present\n- Existing Source/DSP/ header style (prepare/reset/process)\n\nImplement PerformanceStateMachine.h/.cpp:\n- States enum/order exactly: Closed, Primed, Attack, Open, Hold, Sustain, Release, Reopen.\n- Dual-threshold hysteresis: compute T_close = T_open - H each update (H in [0.5, 24] dB); do NOT store a separate persisted T_close parameter.\n- Open when L_open_score >= T_open. Remain open-family while L_sustain_score > T_close. Begin closing only when hold expired, sustain protection inactive, no valid reopen transient, and detector below closing condition.\n- Primed: onset evidence not yet validated; may start open path early when lookahead flag/samples indicate pre-audio open is allowed (lookahead itself may be wired later \u2014 expose the API hook).\n- Hold: detector fell below open threshold but minimum hold time not elapsed.\n- Sustain: low level but sustain score / protection flag keeps musical note open (accept external sustain score / protection inputs; do not implement full Sustain Intelligence DSP here).\n- Release: gain path should move toward floor (state only drives phase; GainComputer owns laws).\n- Reopen: new valid transient during Release reverses the gain path smoothly without resetting gain to zero or inventing a discontinuity; expose current state + transition reason/flags for GainSmoother/computer consumers.\n- Soft decision region helper (section 7.3): u = clamp((L - T_close)/(T_open - T_close), 0, 1); S(u) = 3u\u00b2 - 2u\u00b3 usable as open certainty \u2014 hysteresis still owns discrete state.\n- prepare(sampleRate)/reset(); process sample- or block-wise from detector dB level + optional transient/sustain inputs \u2192 current state + open certainty / should-open evidence. Realtime-safe.\n\nDo NOT implement GainComputer/GainSmoother. Do NOT edit CMakeLists.txt or PluginProcessor (c.3 owns them). Do NOT write tests (c.4).\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/PerformanceStateMachine.h and Source/DSP/PerformanceStateMachine.cpp exist",
+    "PerformanceStateMachine exposes the 8 states Closed, Primed, Attack, Open, Hold, Sustain, Release, Reopen",
+    "T_close is computed as T_open - H and is not stored as an independent parameter",
+    "Open path engages when L_open_score >= T_open and open-family states respect L_sustain_score > T_close hysteresis",
+    "Release supports Reopen on a valid transient without resetting the machine\u2019s gain-path continuity contract (no forced gain-to-zero on reopen)",
+    "Soft-decision helper implements smoothstep S(u)=3u^2-2u^3 on the clamped dual-threshold region",
+    "No heap allocation in the per-block process path",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/PerformanceStateMachine.h",
+    "Source/DSP/PerformanceStateMachine.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/GainComputer.*",
+    "modify Source/DSP/GainSmoother.*",
+    "implement GainComputer or GainSmoother",
+    "implement tests/StateMachineTests.cpp",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread"
+  ],
+  "allowed_symbols": [
+    "PerformanceStateMachine",
+    "PerformanceState",
+    "prepare",
+    "reset",
+    "process",
+    "setOpenThresholdDb",
+    "setHysteresisDb",
+    "setHoldTime",
+    "setSustainProtection",
+    "getState",
+    "getOpenCertainty",
+    "computeCloseThresholdDb",
+    "smoothstep"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use plain C++20 + JUCE types already in the project",
+      "define PerformanceState enum and small status/flags structs in the machine headers",
+      "accept external transient and sustain-score inputs as floats/bools without owning those estimators"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt target_sources",
+      "implement full Pick Attack Guard, Sustain Intelligence, or Noise Learn inside this class",
+      "store T_close as a user parameter separate from T_open and H"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

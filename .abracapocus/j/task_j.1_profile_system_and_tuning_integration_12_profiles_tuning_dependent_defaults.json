@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "task_id": "j.1",
+  "phase": "J",
+  "phase_id": "j",
+  "title": "Profile system and tuning integration \u2014 12 profiles, tuning-dependent defaults",
+  "description": "Implement the profile catalog and tuning integration that supply detector/timing defaults without hidden processing (CHUGGATE_SPEC.md \u00a723, \u00a725).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a723 Profiles (all 12 named profiles and intent)\n- .abracapocus/CHUGGATE_SPEC.md \u00a725 Tuning Integration (factory tunings and which defaults tuning may adjust)\n- Source/ParameterIDs.h for profile index / tuning index parameter IDs\n- Source/StateManager.h for how profile/tuning are expected to persist in state\n- Any existing detector/gate default structures referenced by prior phases\n\nImplement Source/Profiles.h and Source/Profiles.cpp:\n- Enumerate exactly these 12 profiles with stable indices/names:\n  1) Tight Rhythm \u2014 palm-muted, high gain, rapid stops, deep floor, strong transient guard\n  2) Low-Tuned Rhythm \u2014 7/8-string / baritone / Drop A+, slower LF envelopes, false-trigger prevention\n  3) Fast Alternate Picking \u2014 high onset density, fast reopen, cadence-aware\n  4) Lead Sustain \u2014 bends/vibrato/legato/harmonics, soft floor\n  5) Rhythm+Lead Hybrid \u2014 full live/recorded performances\n  6) Controlled Feedback Lead \u2014 held feedback, harmonic verification, safety timeout\n  7) Pre-Amp DI \u2014 before distortion\n  8) Post-Amp Hiss \u2014 after amp/cabinet\n  9) DI-Keyed Reamp \u2014 external sidechain, alignment, lookahead\n  10) Stereo Rhythm Bus \u2014 linked stereo, hiss suppression, preserved image\n  11) Active Bass \u2014 active electronics, hum rejection, moderate sustain\n  12) Distorted Bass \u2014 clean DI key, multiband, preserved LF body\n- API: list profiles, lookup by index/id, applyProfileDefaults(APVTS or parameter map) that sets documented default parameters only\n- Profiles change defaults and detector behavior weights; do not hide unexposed processing paths\n\nImplement Source/TuningProfiles.h and Source/TuningProfiles.cpp:\n- Factory tunings: E/Eb/D/C#/C/B Standard, Drop D/C#/C/B/A, 7-string standard + Drop A, 8-string standard + Drop E, 4/5/6-string bass, custom\n- applyTuningAdjustments() may adjust only: key HPF default, low-band crossover default, detector weighting, expected pitch range, sustain analysis bounds, hum-vs-fundamental discrimination\n- Must not hard-code the gate to specific note names/MIDI pitches as open/close rules\n- Compose cleanly with profile defaults (tuning overlays profile, order documented in header comments)\n\nDo not touch Processor/Editor/CMakeLists or preset JSON in this task.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/Profiles.h and Source/Profiles.cpp exist",
+    "Source/TuningProfiles.h and Source/TuningProfiles.cpp exist",
+    "Profiles module enumerates all 12 named profiles from CHUGGATE_SPEC.md \u00a723 with stable indices",
+    "Profiles expose apply/list/lookup APIs that set parameter defaults without hidden processing paths",
+    "TuningProfiles covers factory tunings from \u00a725 and adjusts only key HPF, low-band crossover, detector weighting, pitch range, sustain bounds, and hum-vs-fundamental discrimination",
+    "Tuning code does not hard-code open/close gate decisions to specific note names",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "pi_cli",
+  "model": "openrouter/z-ai/glm-5.2",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/Profiles.h",
+    "Source/Profiles.cpp",
+    "Source/TuningProfiles.h",
+    "Source/TuningProfiles.cpp"
+  ],
+  "forbidden_changes": [
+    "modify Source/PluginProcessor.cpp or Source/PluginEditor.cpp",
+    "modify Source/StateManager.h or Source/StateManager.cpp",
+    "modify CMakeLists.txt",
+    "create or edit Resources/Presets/*",
+    "modify tests/*",
+    "hard-code gate open/close to specific musical notes",
+    "add third-party dependencies"
+  ],
+  "allowed_symbols": [
+    "Profiles",
+    "ProfileId",
+    "applyProfileDefaults",
+    "getProfileCount",
+    "getProfileName",
+    "TuningProfiles",
+    "TuningId",
+    "applyTuningAdjustments"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use enum class + static tables for profile and tuning defaults",
+      "store defaults as parameter-id/value pairs applied via APVTS unlock/set",
+      "document apply order: profile then tuning overlay"
+    ],
+    "forbidden": [
+      "implement full preset browser GUI",
+      "own processBlock or CMakeLists",
+      "replace APVTS with a parallel parameter system"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

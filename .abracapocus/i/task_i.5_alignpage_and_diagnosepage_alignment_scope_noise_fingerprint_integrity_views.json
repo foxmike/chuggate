@@ -1,0 +1,64 @@
+{
+  "schema_version": 1,
+  "task_id": "i.5",
+  "phase": "I",
+  "phase_id": "i",
+  "title": "AlignPage and DiagnosePage \u2014 alignment scope, noise fingerprint, integrity views",
+  "description": "Implement Align and Diagnose diagnostic pages (spec \u00a720.2\u201320.3, \u00a720.5\u201320.6, \u00a721.4).\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md \u00a713 DI Key Alignment calibration workflow and \u00a720.2 DI Alignment Scope\n- .abracapocus/CHUGGATE_SPEC.md \u00a720.3 Noise Fingerprint, \u00a720.5 Rejected-Signal Audition, \u00a720.6 Analyzer Controls\n- .abracapocus/CHUGGATE_SPEC.md \u00a719 attack/tail integrity concepts and phase-H analyzers\n- Source/Analysis/AlignmentScopeData.* , NoiseFingerprint.* , AttackIntegrityAnalyzer.* , TailIntegrityAnalyzer.* APIs from phase h\n- Source/ParameterIDs.h for lookahead / alignmentOffset / rejected audition params if present\n- Source/GUI/ChugLookAndFeel.h from i.1\n\nImplement AlignPage.h/.cpp:\n- juce::Component showing DI alignment scope: key onset vs main-audio onset waveforms, correlation curve, selected offset, confidence, offset variation, and resulting key delay or main lookahead readout when AlignmentScopeData is attached (null-safe placeholders otherwise).\n- Calibrate / Align button and Accept / Retry / Manual trim controls via callbacks + APVTS binding for key.alignmentOffset and global.lookahead where IDs exist.\n- Message-thread-only painting from snapshot/copy APIs on AlignmentScopeData.\n\nImplement DiagnosePage.h/.cpp:\n- juce::Component sections for: Noise Fingerprint display (from NoiseFingerprint), rejected-signal audition routing controls (mode choices per \u00a720.5 if params/hooks exist), AttackIntegrityAnalyzer and TailIntegrityAnalyzer metric readouts (missed attacks, chopped tails, etc. as exposed by analyzer getters).\n- Analyzer quality/layer toggles (Off/Live/Studio/Diagnose) if wired through processor/editor callbacks \u2014 use std::function setters rather than editing PluginProcessor here.\n- Null-safe when analysis objects not yet injected.\n\nDo NOT implement MainHeader/PluginEditor/CMakeLists or other pages.\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/GUI/AlignPage.h and Source/GUI/AlignPage.cpp exist",
+    "Source/GUI/DiagnosePage.h and Source/GUI/DiagnosePage.cpp exist",
+    "AlignPage paints alignment scope content from AlignmentScopeData when set and remains null-safe otherwise",
+    "AlignPage provides Calibrate/Align action control and binds alignment offset and/or lookahead when ParameterIDs exist",
+    "DiagnosePage displays NoiseFingerprint content and attack/tail integrity readouts when analysis objects are set",
+    "DiagnosePage exposes rejected-signal audition and/or analyzer mode controls via attachments or editor callbacks",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "antigravity_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/GUI/AlignPage.h",
+    "Source/GUI/AlignPage.cpp",
+    "Source/GUI/DiagnosePage.h",
+    "Source/GUI/DiagnosePage.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginEditor.*",
+    "modify Source/PluginProcessor.*",
+    "modify Source/Analysis/*",
+    "modify Source/ParameterIDs.h",
+    "modify Source/GUI/ChugLookAndFeel.*",
+    "implement PerformPage/ShapePage/DetectPage/MainHeader",
+    "add non-JUCE third-party dependencies"
+  ],
+  "allowed_symbols": [
+    "AlignPage",
+    "DiagnosePage",
+    "setAlignmentScopeData",
+    "setNoiseFingerprint",
+    "setAttackIntegrityAnalyzer",
+    "setTailIntegrityAnalyzer",
+    "setCalibrateHandler",
+    "setAnalyzerModeHandler",
+    "resized",
+    "paint"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "custom paint for scope/fingerprint using pre-copied float buffers",
+      "callback hooks for calibrate and analyzer mode without touching processor internals",
+      "APVTS attachments for alignment/lookahead/rejected-route params that already exist"
+    ],
+    "forbidden": [
+      "reimplement correlation or noise FFT inside the page",
+      "own editor shell or CMakeLists target_sources",
+      "block audio thread from GUI timers"
+    ]
+  },
+  "dependencies": [
+    "i.1"
+  ],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}

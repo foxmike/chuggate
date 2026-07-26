@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "task_id": "f.1",
+  "phase": "F",
+  "phase_id": "f",
+  "title": "CrossoverSplitter \u2014 LR4 2-way/3-way, complementary tree",
+  "description": "Implement Source/DSP/CrossoverSplitter as a realtime-safe Linkwitz-Riley fourth-order (LR4) spectral splitter supporting complementary 2-way and 3-way trees for Dual/Tri band topologies.\n\nBefore editing, inspect:\n- .abracapocus/CHUGGATE_SPEC.md section 14 (LR4 design, complementary reconstruction, click-free crossover movement, ranges)\n- .abracapocus/CHUGGATE_SPEC.md \u00a72.2 Dual/Tri band definitions and \u00a730.5 multiband reconstruction expectations\n- Existing Source/DSP/ prepare/reset/process style (fixed storage, no audio-thread alloc)\n- Source/ParameterIDs.h for dual/tri crossover parameter IDs if already present\n\nImplement CrossoverSplitter.h/.cpp per spec \u00a714:\n- LR4 = two cascaded 2nd-order Butterworth sections with Q = 1/sqrt(2) for low/high pair. All internal filter state is preallocated in prepare().\n- Modes: Bypass (pass-through one band), TwoWay (Body/Hiss or low/high), ThreeWay (Weight/Voice/Hiss via complementary tree: split at f_low then split the high (or mid path) at f_high \u2014 document chosen tree).\n- Crossover ranges with clamping and ordering protection:\n  Dual: 1.5\u20138 kHz; Tri low: 80\u2013900 Hz; Tri high: 1.5\u201310 kHz; enforce f_low < f_high with a minimum gap so bands never invert.\n- Click-free coefficient/crossover movement: smooth cutoff (or bilinear coeff interpolation) when setCrossoverHz changes; no zipper when frequency is modulated slowly.\n- Complementary reconstruction: at unity band gains, sum of band outputs reproduces input magnitude within a documented tolerance (phase-linear LR complementary sum). Do NOT claim sample-identical bit equality \u2014 magnitude/reconstruction is tolerance-based.\n- processBlock (or process) API produces per-band buffers into caller-provided AudioBuffer slices or internal fixed band taps sized in prepare(sampleRate, maxBlockSize, numChannels). Stereo-capable (process channels independently with shared coeffs).\n- prepare(sampleRate, maxBlockSize, numChannels)/reset(); no heap allocation on the audio path after prepare.\n- Expose setMode(Bypass/TwoWay/ThreeWay), setCrossoverHz (dual or low/high), getNumBands(), optional getBandEnergy helpers are fine.\n\nDo NOT implement MultibandGate or HissCurtain. Do NOT edit PluginProcessor or CMakeLists.txt (f.4 owns integration). Do NOT write tests (f.5).\n\nSTRICT FILE SCOPE: Create or modify ONLY the files listed in this task's allowed_write_paths.",
+  "acceptance_criteria": [
+    "Source/DSP/CrossoverSplitter.h and Source/DSP/CrossoverSplitter.cpp exist",
+    "CrossoverSplitter implements LR4 (cascaded Butterworth Q=1/sqrt(2)) two-way and three-way complementary trees",
+    "CrossoverSplitter supports Bypass, TwoWay, and ThreeWay modes",
+    "Crossover frequency setters clamp to Dual 1.5\u20138 kHz, Tri low 80\u2013900 Hz, Tri high 1.5\u201310 kHz with f_low < f_high ordering protection",
+    "Crossover frequency changes are click-free (smoothed coeffs or equivalent)",
+    "Unity-gain band sum is designed for complementary magnitude reconstruction (tolerance-based, not sample-identical)",
+    "No heap allocation in the per-block process path after prepare",
+    "No file outside the task's allowed_write_paths is created or modified"
+  ],
+  "selected_backend": "codex_cli",
+  "verification_profile": "focused",
+  "allowed_write_paths": [
+    "Source/DSP/CrossoverSplitter.h",
+    "Source/DSP/CrossoverSplitter.cpp"
+  ],
+  "forbidden_changes": [
+    "modify CMakeLists.txt",
+    "modify Source/PluginProcessor.*",
+    "modify Source/DSP/MultibandGate.*",
+    "modify Source/DSP/HissCurtain.*",
+    "implement tests/MultibandGateTests.cpp",
+    "add non-JUCE third-party dependencies",
+    "allocate on the audio/process thread"
+  ],
+  "allowed_symbols": [
+    "CrossoverSplitter",
+    "prepare",
+    "reset",
+    "process",
+    "setMode",
+    "setCrossoverHz",
+    "setDualCrossoverHz",
+    "setTriCrossoverHz",
+    "getNumBands"
+  ],
+  "decision_budget": {
+    "allowed": [
+      "use plain C++20 + JUCE dsp/filter primitives already available in the project",
+      "choose complementary 3-way tree topology (document in header)",
+      "smooth crossover coeffs with one-pole or for-loop watermark rather than instantaneous swap"
+    ],
+    "forbidden": [
+      "wire into PluginProcessor processBlock",
+      "own CMakeLists.txt target_sources",
+      "claim bit-identical sample reconstruction as a hard requirement",
+      "implement MultibandGate gain laws or HissCurtain TPT inside this unit"
+    ]
+  },
+  "dependencies": [],
+  "task_timeout_seconds": 900,
+  "verification_commands": []
+}
