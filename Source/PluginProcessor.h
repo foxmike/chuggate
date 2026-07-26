@@ -23,6 +23,12 @@
 #include "DSP/StereoLinker.h"
 #include "DSP/AnomalyGuard.h"
 #include "DSP/RejectedSignalRouter.h"
+#include "Analysis/AnalysisFifo.h"
+#include "Analysis/PerformanceHistory.h"
+#include "Analysis/NoiseFingerprint.h"
+#include "Analysis/AlignmentScopeData.h"
+#include "Analysis/AttackIntegrityAnalyzer.h"
+#include "Analysis/TailIntegrityAnalyzer.h"
 
 class ChugGateAudioProcessorEditor;
 
@@ -31,7 +37,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 class StateManager;
 }
 
-class ChugGateAudioProcessor : public juce::AudioProcessor {
+class ChugGateAudioProcessor : public juce::AudioProcessor,
+                                  private juce::Timer {
 public:
   ChugGateAudioProcessor();
   ~ChugGateAudioProcessor() override = default;
@@ -81,6 +88,59 @@ public:
   RealTimeState realTimeState;
 
   ChugGate::StateManager* getStateManager() noexcept { return stateManager.get(); }
+
+  // Phase H analysis accessors (consumed by phase I GUI; message-thread only).
+  ChugGate::Analysis::AnalysisFifo &getAnalysisFifo() noexcept {
+    return analysisFifo;
+  }
+  const ChugGate::Analysis::AnalysisFifo &getAnalysisFifo() const noexcept {
+    return analysisFifo;
+  }
+  ChugGate::Analysis::PerformanceHistory &getPerformanceHistory() noexcept {
+    return performanceHistory;
+  }
+  const ChugGate::Analysis::PerformanceHistory &getPerformanceHistory()
+      const noexcept {
+    return performanceHistory;
+  }
+  ChugGate::Analysis::NoiseFingerprint &getNoiseFingerprint() noexcept {
+    return noiseFingerprint;
+  }
+  const ChugGate::Analysis::NoiseFingerprint &getNoiseFingerprint()
+      const noexcept {
+    return noiseFingerprint;
+  }
+  ChugGate::Analysis::AlignmentScopeData &getAlignmentScopeData() noexcept {
+    return alignmentScopeData;
+  }
+  const ChugGate::Analysis::AlignmentScopeData &getAlignmentScopeData()
+      const noexcept {
+    return alignmentScopeData;
+  }
+  ChugGate::Analysis::AttackIntegrityAnalyzer &getAttackIntegrityAnalyzer()
+      noexcept {
+    return attackIntegrityAnalyzer;
+  }
+  const ChugGate::Analysis::AttackIntegrityAnalyzer &
+  getAttackIntegrityAnalyzer() const noexcept {
+    return attackIntegrityAnalyzer;
+  }
+  ChugGate::Analysis::TailIntegrityAnalyzer &getTailIntegrityAnalyzer()
+      noexcept {
+    return tailIntegrityAnalyzer;
+  }
+  const ChugGate::Analysis::TailIntegrityAnalyzer &getTailIntegrityAnalyzer()
+      const noexcept {
+    return tailIntegrityAnalyzer;
+  }
+
+  // Active quality mode (message-thread read). Defaults to Studio when the
+  // analyzer is not driven by a parameter yet.
+  ChugGate::Analysis::QualityMode getAnalysisQualityMode() const noexcept {
+    return analysisQualityMode_.load(std::memory_order_relaxed);
+  }
+  // Update quality mode on every owned analysis unit. Message thread.
+  void setAnalysisQualityMode(ChugGate::Analysis::QualityMode mode) noexcept;
 
   // Expose state for GUI/timeline endpoints
   ChugGate::DSP::PerformanceStateMachine::State getCurrentState() const noexcept {
@@ -278,6 +338,41 @@ private:
   juce::AudioBuffer<float> monoWetLow;
   juce::AudioBuffer<float> monoWetMid;
   juce::AudioBuffer<float> monoWetHigh;
+
+  // Phase H analysis units (lifetime owned here). The AnalysisFifo is the
+  // only one touched on the audio thread (tryPush is lock-free and
+  // allocation-free). PerformanceHistory, NoiseFingerprint,
+  // AlignmentScopeData and the two integrity analyzers are message-thread
+  // only; the timerCallback below drains the FIFO and feeds them.
+  ChugGate::Analysis::AnalysisFifo analysisFifo;
+  ChugGate::Analysis::PerformanceHistory performanceHistory;
+  ChugGate::Analysis::NoiseFingerprint noiseFingerprint;
+  ChugGate::Analysis::AlignmentScopeData alignmentScopeData;
+  ChugGate::Analysis::AttackIntegrityAnalyzer attackIntegrityAnalyzer;
+  ChugGate::Analysis::TailIntegrityAnalyzer tailIntegrityAnalyzer;
+
+  // Quality mode shared by every phase-H analysis unit. Atomic so the
+  // audio thread can early-out before building an AnalysisFrame and so
+  // setters from the message/UI thread are race-free.
+  std::atomic<int> analysisQualityMode_{
+      static_cast<int>(ChugGate::Analysis::QualityMode::Studio)};
+
+  // Live-mode decimation counter for the audio-thread push path. We push
+  // roughly one out of every kLivePushDecimationN frames in Live mode;
+  // Studio / Diagnose push every block (the consumer-side decimation in
+  // PerformanceHistory handles additional thinning).
+  int livePushCounter_ = 0;
+  static constexpr int kLivePushDecimationN = 4;
+
+  // Timer period for the FIFO drainer (ms). 30 Hz is fast enough to keep
+  // up with default block sizes and slow enough to avoid pegging the
+  // message thread when the host is busy.
+  static constexpr int kAnalysisDrainPeriodMs = 33;
+
+  // juce::Timer override — runs on the message thread, drains the FIFO
+  // into the message-side consumers and refreshes fingerprint/scope
+  // snapshots.
+  void timerCallback() override;
 
   void processTopology(int topology, juce::AudioBuffer<float>& targetBuffer, const float* smoothedGainsL, const float* smoothedGainsR, float lastActiveRelease, float avgL, int numSamples);
 

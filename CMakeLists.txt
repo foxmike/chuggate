@@ -67,6 +67,12 @@ target_sources(ChugGate
         Source/DSP/StereoLinker.cpp
         Source/DSP/AnomalyGuard.cpp
         Source/DSP/RejectedSignalRouter.cpp
+        Source/Analysis/AnalysisFifo.cpp
+        Source/Analysis/PerformanceHistory.cpp
+        Source/Analysis/NoiseFingerprint.cpp
+        Source/Analysis/AlignmentScopeData.cpp
+        Source/Analysis/AttackIntegrityAnalyzer.cpp
+        Source/Analysis/TailIntegrityAnalyzer.cpp
 )
 
 target_compile_definitions(ChugGate
@@ -298,6 +304,36 @@ target_sources(ChugGateTests
         Source/DSP/AnomalyGuard.cpp
         Source/DSP/RejectedSignalRouter.cpp
 )
+
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/AnalysisTests.cpp")
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/tests/AnalysisTests.cpp"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests"
+        COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_BINARY_DIR}/tests/AnalysisTests.cpp"
+        COMMENT "Generating stub AnalysisTests.cpp"
+    )
+    target_sources(ChugGateTests
+        PRIVATE
+            "${CMAKE_CURRENT_BINARY_DIR}/tests/AnalysisTests.cpp"
+            Source/Analysis/AnalysisFifo.cpp
+            Source/Analysis/PerformanceHistory.cpp
+            Source/Analysis/NoiseFingerprint.cpp
+            Source/Analysis/AlignmentScopeData.cpp
+            Source/Analysis/AttackIntegrityAnalyzer.cpp
+            Source/Analysis/TailIntegrityAnalyzer.cpp
+    )
+else()
+    target_sources(ChugGateTests
+        PRIVATE
+            tests/AnalysisTests.cpp
+            Source/Analysis/AnalysisFifo.cpp
+            Source/Analysis/PerformanceHistory.cpp
+            Source/Analysis/NoiseFingerprint.cpp
+            Source/Analysis/AlignmentScopeData.cpp
+            Source/Analysis/AttackIntegrityAnalyzer.cpp
+            Source/Analysis/TailIntegrityAnalyzer.cpp
+    )
+endif()
 
 target_compile_definitions(ChugGateTests
     PRIVATE

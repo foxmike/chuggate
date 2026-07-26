@@ -450,6 +450,57 @@ void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
   anomalyGuard.prepare(sampleRate);
   rejectedSignalRouter.prepare(sampleRate);
 
+  // Phase H analysis prepare. Sizing is fixed here so the audio-thread
+  // push path never allocates. The Timer that drains the FIFO is started
+  // below after all storage has been allocated.
+  analysisFifo.prepare(/*maxFrames*/ 256, /*numChannels*/ numMainChannels);
+
+  // PerformanceHistory backs the timeline visualisation. Control rate
+  // matches the typical per-block push cadence so the history window at
+  // the default duration covers ~10 s of audio blocks.
+  {
+    ChugGate::Analysis::PerformanceHistory::Config histCfg;
+    histCfg.controlRateHz = std::max(1.0, getSampleRate() / samplesPerBlock);
+    histCfg.minDurationSeconds = 2.0;
+    histCfg.maxDurationSeconds = 30.0;
+    histCfg.initialDurationSeconds = 10.0;
+    histCfg.numChannels = numMainChannels;
+    performanceHistory.prepare(histCfg);
+  }
+
+  noiseFingerprint.prepare(sampleRate, ChugGate::Analysis::NoiseFingerprint::defaultNumBins);
+  alignmentScopeData.prepare(); // default onset/correlation capacities
+  attackIntegrityAnalyzer.prepare();
+  tailIntegrityAnalyzer.prepare();
+
+  // Reset state on the analysis units (prepare may have reallocated).
+  analysisFifo.reset();
+  performanceHistory.reset();
+  noiseFingerprint.reset();
+  alignmentScopeData.reset();
+  attackIntegrityAnalyzer.reset();
+  tailIntegrityAnalyzer.reset();
+
+  // Re-apply quality mode after reset so the new buffers honour it.
+  const auto mode = static_cast<ChugGate::Analysis::QualityMode>(
+      analysisQualityMode_.load(std::memory_order_relaxed));
+  analysisFifo.setQualityMode(mode);
+  performanceHistory.setQualityMode(mode);
+  noiseFingerprint.setQualityMode(mode);
+  alignmentScopeData.setQualityMode(mode);
+  attackIntegrityAnalyzer.setQualityMode(mode);
+  tailIntegrityAnalyzer.setQualityMode(mode);
+
+  // Live decimation counter starts fresh on every prepare.
+  livePushCounter_ = 0;
+
+  // Start the message-thread drainer at a safe rate. 33 ms ≈ 30 Hz is
+  // fast enough to keep up with the default ~10–20 blocks/s push cadence
+  // (drains in a single tick) and slow enough to stay well below the
+  // message thread budget.
+  if (!isTimerRunning())
+    startTimer(kAnalysisDrainPeriodMs);
+
   prevTopologyBuffer.setSize(numMainChannels, samplesPerBlock);
   bandBuffer0.setSize(numMainChannels, samplesPerBlock);
   bandBuffer1.setSize(numMainChannels, samplesPerBlock);
@@ -500,6 +551,9 @@ void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
 }
 
 void ChugGateAudioProcessor::releaseResources() {
+  // Stop the message-thread drainer before shrinking buffers.
+  stopTimer();
+
   monoKeyBuffer.setSize(0, 0);
   smoothedGainBuffer.setSize(0, 0);
   monoMainBuffer.setSize(0, 0);
@@ -558,6 +612,17 @@ void ChugGateAudioProcessor::reset() {
   stereoLinker.reset();
   anomalyGuard.reset();
   rejectedSignalRouter.reset();
+
+  // Phase H analysis resets — keep allocated storage, drop indices and
+  // counters. Safe on the audio thread: none of these touch shared
+  // atomics on the producer side.
+  analysisFifo.reset();
+  performanceHistory.reset();
+  noiseFingerprint.reset();
+  alignmentScopeData.reset();
+  attackIntegrityAnalyzer.reset();
+  tailIntegrityAnalyzer.reset();
+  livePushCounter_ = 0;
 }
 
 float ChugGateAudioProcessor::getParamValue(const std::atomic<float>* paramPtr, float defaultValue) const noexcept {
@@ -911,6 +976,12 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   bool anySustain = false;
   float sumL = 0.0f;
   float lastActiveRelease = releaseVal;
+  // Per-block snapshot values captured from the last sample so we can
+  // build an AnalysisFrame without re-running the DSP path on the
+  // message thread.
+  float lastKeyEnvelopeDb = 0.0f;
+  float lastTransientStrength = 0.0f;
+  float lastSustainScore = 0.0f;
 
   for (int i = 0; i < numSamples; ++i) {
       float keySample = monoKey[i];
@@ -1003,6 +1074,9 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       if (i == numSamples - 1) {
           realTimeState.currentState.store(static_cast<int>(stateOutput.state));
           realTimeState.lastGain.store(0.5f * (linkedGainPair.left + linkedGainPair.right));
+          lastKeyEnvelopeDb = linkedL;
+          lastTransientStrength = attackGuardOutput.transientStrength;
+          lastSustainScore = sustainOutput.sustainScore;
       }
   }
 
@@ -1025,6 +1099,46 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   realTimeState.noiseMidBandFloor.store(noiseFloorEstimator.getBandFloorDb(2));
   realTimeState.noiseHighBandFloor.store(noiseFloorEstimator.getBandFloorDb(3));
   realTimeState.alignmentOffset.store(alignmentDelayMs);
+
+  // Phase H: push an AnalysisFrame to the lock-free SPSC FIFO. This
+  // runs *after* all block-summary values (envelopes, thresholds, noise
+  // floor, gate state, gain, alignment delay) are known. tryPush is
+  // non-blocking — if the FIFO is full we silently drop the frame, per
+  // spec §28.2 ("drop visual frames when overloaded, never block
+  // audio"). When QualityMode is Off we skip the entire block to
+  // minimise audio-thread work; Live thins further to one push out of
+  // every kLivePushDecimationN blocks; Studio/Diagnose push every
+  // block (PerformanceHistory and the consumer-side decimation handle
+  // the rest).
+  const auto analysisMode = static_cast<ChugGate::Analysis::QualityMode>(
+      analysisQualityMode_.load(std::memory_order_relaxed));
+  if (analysisMode != ChugGate::Analysis::QualityMode::Off) {
+      bool pushThisBlock = true;
+      if (analysisMode == ChugGate::Analysis::QualityMode::Live) {
+          livePushCounter_ = (livePushCounter_ + 1) % kLivePushDecimationN;
+          pushThisBlock = (livePushCounter_ == 0);
+      }
+      if (pushThisBlock) {
+          ChugGate::Analysis::AnalysisFrame frame;
+          frame.keyEnvelope = lastKeyEnvelopeDb;
+          frame.mainEnvelope = avgL;
+          frame.thresholdOpen = thresholdOpenVal;
+          frame.thresholdClose = thresholdOpenVal - hysteresisVal;
+          frame.noiseFloor = realTimeState.noiseBroadbandFloor.load();
+          frame.gateState = realTimeState.currentState.load();
+          frame.outputGain = realTimeState.lastGain.load();
+          frame.transientMarker = lastTransientStrength;
+          frame.sustainConfidence = lastSustainScore;
+          frame.alignmentOffset = static_cast<float>(alignmentDelayMs);
+          frame.hasAlignmentOffset = true;
+          frame.lookaheadRegion = lookaheadMs > 0.0f;
+          frame.hasLookaheadRegion = true;
+          // Non-blocking drop on full FIFO. No allocation, no lock, no
+          // GUI access — safe to call unconditionally on the audio
+          // thread.
+          analysisFifo.tryPush(frame);
+      }
+  }
 
   // 5) Apply topology selector, crossfade, and trim to main output channels (in-place)
   if (enabled && !bypassed && listenModeVal == 0) {
@@ -1474,6 +1588,82 @@ bool ChugGateAudioProcessor::acceptAlignment() noexcept {
         }
     }
     return false;
+}
+
+void ChugGateAudioProcessor::setAnalysisQualityMode(
+    ChugGate::Analysis::QualityMode mode) noexcept {
+  analysisQualityMode_.store(static_cast<int>(mode), std::memory_order_relaxed);
+  analysisFifo.setQualityMode(mode);
+  performanceHistory.setQualityMode(mode);
+  noiseFingerprint.setQualityMode(mode);
+  alignmentScopeData.setQualityMode(mode);
+  attackIntegrityAnalyzer.setQualityMode(mode);
+  tailIntegrityAnalyzer.setQualityMode(mode);
+}
+
+void ChugGateAudioProcessor::timerCallback() {
+  // juce::Timer callback — runs on the message thread. We drain every
+  // pending frame from the SPSC FIFO into the PerformanceHistory ring,
+  // refresh the noise fingerprint / alignment scope from upstream
+  // snapshots, and tick the integrity analyzers. None of this runs on
+  // the audio thread; the only shared state is the FIFO itself which is
+  // already lock-free.
+  ChugGate::Analysis::AnalysisFrame frame;
+  int drained = 0;
+  while (analysisFifo.tryPop(frame)) {
+    performanceHistory.pushFromFrame(frame);
+    ++drained;
+  }
+
+  // Tick the integrity analyzers only after a successful drain so they
+  // see fresh PerformanceHistory data. They pull what they need from the
+  // history view internally; no allocation occurs on the hot path.
+  if (drained > 0) {
+    attackIntegrityAnalyzer.observe(performanceHistory);
+    tailIntegrityAnalyzer.observe(performanceHistory);
+  }
+
+  // Refresh NoiseFingerprint from the most recent applied noise learn
+  // suggestions. These getters are cheap and only called from the
+  // message thread; copying into preallocated storage is a no-op when
+  // quality mode is Off. We surface the boolean feature flags from the
+  // suggestions snapshot so the GUI can paint hum/hiss/intermittent
+  // markers; the full spectral profile wiring lands when the upstream
+  // DSP exposes a snapshot getter in a follow-up phase.
+  {
+    const auto &sugg = noiseFloorEstimator.getAppliedSuggestions();
+    if (sugg.valid) {
+      ChugGate::Analysis::NoiseFingerprint::LearnedProfile profile;
+      profile.sampleRate = getSampleRate();
+      profile.humFiftyHz = sugg.humRejectionEnabledHint;
+      profile.humSixtyHz = false;
+      profile.hasHumHarmonics = sugg.humRejectionEnabledHint;
+      profile.hasHighFrequencyHiss = sugg.valid;
+      profile.hasIntermittentBursts = false;
+      profile.humPeakBin = -1;
+      profile.harmonicPeakBin = -1;
+      profile.hissPeakBin = -1;
+      noiseFingerprint.updateFromLearnedProfile(profile);
+    }
+  }
+
+  // Refresh AlignmentScopeData from the current alignment result. We
+  // surface scalars only; onset waveforms and the correlation curve
+  // are produced by the upstream DSP and will be wired in by a
+  // follow-up phase when the snapshot getters are finalised.
+  {
+    const auto accepted = alignmentAnalyzer.getAcceptedResult();
+    ChugGate::Analysis::AlignmentScopeData::Snapshot snap;
+    snap.offsetMs = accepted.offsetMs;
+    snap.confidence = accepted.confidence;
+    snap.offsetVariationMs = accepted.variationMs;
+    snap.recommendedKeyDelayMs = accepted.keyDelayMs;
+    snap.mainLookaheadMs = static_cast<float>(getSampleRate() > 0.0
+                                                 ? accepted.keyDelayMs
+                                                 : 0.0f);
+    snap.needsMainLookahead = accepted.needsMainLookahead;
+    alignmentScopeData.setResult(snap);
+  }
 }
 
 juce::AudioProcessor *JUCE_CALLTYPE createPluginFilter() {
