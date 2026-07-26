@@ -5,9 +5,10 @@
 /Builds/
 /out/
 
-# IDE state
+# IDE and state
 /.idea/
 /.vscode/
+/state/
 *.user
 *.user.*
 *.suo
