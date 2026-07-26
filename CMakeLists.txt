@@ -73,6 +73,15 @@ target_sources(ChugGate
         Source/Analysis/AlignmentScopeData.cpp
         Source/Analysis/AttackIntegrityAnalyzer.cpp
         Source/Analysis/TailIntegrityAnalyzer.cpp
+        Source/GUI/ChugLookAndFeel.cpp
+        Source/GUI/PerformanceTimeline.cpp
+        Source/GUI/StateIndicator.cpp
+        Source/GUI/PerformPage.cpp
+        Source/GUI/ShapePage.cpp
+        Source/GUI/DetectPage.cpp
+        Source/GUI/AlignPage.cpp
+        Source/GUI/DiagnosePage.cpp
+        Source/GUI/MainHeader.cpp
 )
 
 target_compile_definitions(ChugGate
