@@ -56,6 +56,10 @@ target_sources(ChugGate
         Source/DSP/PerformanceStateMachine.cpp
         Source/DSP/GainComputer.cpp
         Source/DSP/GainSmoother.cpp
+        Source/DSP/CadenceTracker.cpp
+        Source/DSP/NoiseFloorEstimator.cpp
+        Source/DSP/AlignmentAnalyzer.cpp
+        Source/DSP/FractionalDelay.cpp
 )
 
 target_compile_definitions(ChugGate
@@ -173,6 +177,48 @@ else()
             Source/DSP/FundamentalEstimator.cpp
             Source/DSP/SustainAnalyzer.cpp
             Source/DSP/FeedbackDetector.cpp
+    )
+endif()
+
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/CadenceTests.cpp")
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/tests/CadenceTests.cpp"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests"
+        COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_BINARY_DIR}/tests/CadenceTests.cpp"
+        COMMENT "Generating stub CadenceTests.cpp"
+    )
+    target_sources(ChugGateTests
+        PRIVATE
+            "${CMAKE_CURRENT_BINARY_DIR}/tests/CadenceTests.cpp"
+            Source/DSP/CadenceTracker.cpp
+    )
+else()
+    target_sources(ChugGateTests
+        PRIVATE
+            tests/CadenceTests.cpp
+            Source/DSP/CadenceTracker.cpp
+    )
+endif()
+
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/AlignmentTests.cpp")
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/tests/AlignmentTests.cpp"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests"
+        COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_BINARY_DIR}/tests/AlignmentTests.cpp"
+        COMMENT "Generating stub AlignmentTests.cpp"
+    )
+    target_sources(ChugGateTests
+        PRIVATE
+            "${CMAKE_CURRENT_BINARY_DIR}/tests/AlignmentTests.cpp"
+            Source/DSP/AlignmentAnalyzer.cpp
+            Source/DSP/FractionalDelay.cpp
+    )
+else()
+    target_sources(ChugGateTests
+        PRIVATE
+            tests/AlignmentTests.cpp
+            Source/DSP/AlignmentAnalyzer.cpp
+            Source/DSP/FractionalDelay.cpp
     )
 endif()
 

@@ -329,12 +329,26 @@ ChugGateAudioProcessor::ChugGateAudioProcessor()
     params.feedbackFloor = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::feedbackFloor);
     params.feedbackRequireExtKey = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::feedbackRequireExtKey);
     params.feedbackSafetyTimeout = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::feedbackSafetyTimeout);
+
+    // Phase E parameters
+    params.cadenceEnabled = apvts.getRawParameterValue(ChugGate::ParameterIDs::Cadence::enabled);
+    params.cadenceAmount = apvts.getRawParameterValue(ChugGate::ParameterIDs::Cadence::amount);
+    params.cadenceReleaseFraction = apvts.getRawParameterValue(ChugGate::ParameterIDs::Cadence::releaseFraction);
+    params.cadenceSourceMode = apvts.getRawParameterValue(ChugGate::ParameterIDs::Cadence::sourceMode);
+
+    params.noiseSnrMargin = apvts.getRawParameterValue(ChugGate::ParameterIDs::NoiseLearn::snrMargin);
+    params.noiseAdaptiveEnabled = apvts.getRawParameterValue(ChugGate::ParameterIDs::NoiseLearn::adaptiveEnabled);
+    params.noiseAdaptiveRate = apvts.getRawParameterValue(ChugGate::ParameterIDs::NoiseLearn::adaptiveRate);
+
+    params.alignmentOffset = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::alignmentOffset);
+    params.lookahead = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::lookahead);
 }
 
 void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
                                            int samplesPerBlock) {
   monoKeyBuffer.setSize(1, samplesPerBlock);
   smoothedGainBuffer.setSize(1, samplesPerBlock);
+  monoMainBuffer.setSize(1, samplesPerBlock);
 
   const int numMainChannels = getMainBusNumInputChannels();
   const int numSidechainChannels = getBusCount(true) > 1 ? getBus(true, 1)->getNumberOfChannels() : 0;
@@ -354,6 +368,23 @@ void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
   sustainAnalyzer.prepare(sampleRate, samplesPerBlock);
   feedbackDetector.prepare(sampleRate, samplesPerBlock);
 
+  // Phase E prepare
+  cadenceTracker.prepare(sampleRate);
+  noiseFloorEstimator.prepare(sampleRate, samplesPerBlock);
+  alignmentAnalyzer.prepare(sampleRate, samplesPerBlock);
+  // size FractionalDelay for extended capacity +/- 100 ms
+  fractionalDelay.prepare(sampleRate, ChugGate::DSP::FractionalDelay::maximumExtendedDelayMs);
+
+  // Initialize main-path delay
+  currentLatency = 0;
+  setLatencySamples(0);
+
+  const double maxMainDelayMs = 100.0f + 10.0f; // 100 ms skew + 10 ms lookahead
+  const int maxMainDelaySamples = static_cast<int>(std::ceil(sampleRate * maxMainDelayMs * 0.001)) + 4;
+  mainDelayBuffers.setSize(numMainChannels, maxMainDelaySamples);
+  mainDelayBuffers.clear();
+  mainDelayWriteIndex = 0;
+
   keySourceRouter.reset();
   keyConditioner.reset();
   powerlineShield.reset();
@@ -365,11 +396,18 @@ void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
   stateMachine.reset();
   gainComputer.reset();
   gainSmoother.reset(1.0f);
+
+  cadenceTracker.reset();
+  noiseFloorEstimator.reset();
+  alignmentAnalyzer.reset();
+  fractionalDelay.reset();
 }
 
 void ChugGateAudioProcessor::releaseResources() {
   monoKeyBuffer.setSize(0, 0);
   smoothedGainBuffer.setSize(0, 0);
+  monoMainBuffer.setSize(0, 0);
+  mainDelayBuffers.setSize(0, 0);
 }
 
 void ChugGateAudioProcessor::reset() {
@@ -384,6 +422,13 @@ void ChugGateAudioProcessor::reset() {
   stateMachine.reset();
   gainComputer.reset();
   gainSmoother.reset(1.0f);
+
+  cadenceTracker.reset();
+  noiseFloorEstimator.reset();
+  alignmentAnalyzer.reset();
+  fractionalDelay.reset();
+  mainDelayBuffers.clear();
+  mainDelayWriteIndex = 0;
 }
 
 float ChugGateAudioProcessor::getParamValue(const std::atomic<float>* paramPtr, float defaultValue) const noexcept {
@@ -428,6 +473,30 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   const float kneeVal = getParamValue(params.knee, 6.0f);
   const float curveVal = getParamValue(params.curve, 1.0f);
   const auto gainModeIdx = static_cast<int>(getParamValue(params.gainMode, 0.0f));
+
+  // Phase E parameters
+  const bool cadenceEnabled = getParamValue(params.cadenceEnabled, 1.0f) > 0.5f;
+  const float cadenceAmount = getParamValue(params.cadenceAmount, 0.5f);
+  const float cadenceReleaseFraction = getParamValue(params.cadenceReleaseFraction, 0.5f);
+  const int cadenceSourceMode = static_cast<int>(getParamValue(params.cadenceSourceMode, 0.0f));
+
+  const float noiseSnrMarginVal = getParamValue(params.noiseSnrMargin, 12.0f);
+  const bool noiseAdaptiveEnabledVal = getParamValue(params.noiseAdaptiveEnabled, 0.0f) > 0.5f;
+  const float noiseAdaptiveRateVal = getParamValue(params.noiseAdaptiveRate, 0.05f);
+
+  const float alignmentOffsetVal = getParamValue(params.alignmentOffset, 0.0f);
+  const int lookaheadChoice = static_cast<int>(getParamValue(params.lookahead, 0.0f));
+
+  float lookaheadMs = 0.0f;
+  switch (lookaheadChoice) {
+      case 1: lookaheadMs = 0.25f; break;
+      case 2: lookaheadMs = 0.5f; break;
+      case 3: lookaheadMs = 1.0f; break;
+      case 4: lookaheadMs = 2.0f; break;
+      case 5: lookaheadMs = 5.0f; break;
+      case 6: lookaheadMs = 10.0f; break;
+      default: lookaheadMs = 0.0f; break;
+  }
 
   // Update key source router parameters
   keySourceRouter.setSource(static_cast<ChugGate::DSP::KeySourceRouter::Source>(
@@ -569,17 +638,119 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       }
   }
 
+  // Pre-mix mono main input for AlignmentAnalyzer
+  if (monoMainBuffer.getNumSamples() < numSamples) {
+    monoMainBuffer.setSize(1, numSamples, false, true, true);
+  }
+  float* monoMain = monoMainBuffer.getWritePointer(0);
+  if (numMainChannels > 0) {
+      std::copy(mainChannels[0], mainChannels[0] + numSamples, monoMain);
+      for (int c = 1; c < numMainChannels; ++c) {
+          for (int i = 0; i < numSamples; ++i) {
+              monoMain[i] += mainChannels[c][i];
+          }
+      }
+      const float invChannels = 1.0f / static_cast<float>(numMainChannels);
+      for (int i = 0; i < numSamples; ++i) {
+          monoMain[i] *= invChannels;
+      }
+  } else {
+      std::fill(monoMain, monoMain + numSamples, 0.0f);
+  }
+
+  // Update CadenceTracker host tempo/BPM if playhead is available
+  if (auto* ph = getPlayHead()) {
+      auto positionInfo = ph->getPosition();
+      if (positionInfo.hasValue()) {
+          if (auto bpm = positionInfo->getBpm()) {
+              cadenceTracker.setHostTempoBpm(static_cast<float>(*bpm));
+          }
+      }
+  }
+
+  // Update CadenceTracker and NoiseFloorEstimator controls
+  cadenceTracker.setMode(cadenceEnabled ? cadenceSourceMode : static_cast<int>(ChugGate::DSP::CadenceTracker::Mode::Off));
+  cadenceTracker.setConstraintFactor(cadenceReleaseFraction);
+
+  noiseFloorEstimator.setSlowAdaptationEnabled(noiseAdaptiveEnabledVal);
+  noiseFloorEstimator.setSlowAdaptationLambda(1.0f - noiseAdaptiveRateVal);
+  noiseFloorEstimator.setSnrMarginDb(noiseSnrMarginVal);
+
+  // Compute alignment delay (calibration or manual parameter)
+  float alignmentDelayMs = 0.0f;
+  auto acceptedResult = alignmentAnalyzer.getAcceptedResult();
+  if (acceptedResult.valid) {
+      alignmentDelayMs = acceptedResult.offsetMs;
+  } else {
+      alignmentDelayMs = alignmentOffsetVal;
+      if (std::abs(alignmentOffsetVal) > 25.0f) {
+          alignmentDelayMs = juce::jlimit(-100.0f, 100.0f, alignmentOffsetVal);
+      } else {
+          alignmentDelayMs = juce::jlimit(-25.0f, 25.0f, alignmentOffsetVal);
+      }
+  }
+
+  // Apply alignment offset to FractionalDelay
+  fractionalDelay.setDelayMs(alignmentDelayMs);
+
+  // Calculate total main-path delay (negative DI skew + lookahead) and report latency
+  const float negativeSkewMs = (alignmentDelayMs < 0.0f) ? -alignmentDelayMs : 0.0f;
+  const float totalMainDelayMs = lookaheadMs + negativeSkewMs;
+  const double mainDelaySamples = totalMainDelayMs * getSampleRate() * 0.001;
+  const int delaySamples = static_cast<int>(std::round(mainDelaySamples));
+
+  if (delaySamples != currentLatency) {
+      currentLatency = delaySamples;
+      setLatencySamples(currentLatency);
+  }
+
+  // Push key + main onset audio into AlignmentAnalyzer before FractionalDelay
+  alignmentAnalyzer.process(monoKey, monoMain, numSamples);
+
+  // Apply FractionalDelay on key path
+  fractionalDelay.process(monoKey, numSamples);
+
+  // Unconditionally delay the main path if delay is engaged (preserves latency/phase alignment)
+  const int maxDelaySamples = mainDelayBuffers.getNumSamples();
+  if (maxDelaySamples > 0 && delaySamples > 0) {
+      for (int channel = 0; channel < numMainChannels; ++channel) {
+          float* channelData = buffer.getWritePointer(channel);
+          float* delayData = mainDelayBuffers.getWritePointer(channel);
+          int writeIdx = mainDelayWriteIndex;
+          for (int i = 0; i < numSamples; ++i) {
+              float inputSample = channelData[i];
+              delayData[writeIdx] = inputSample;
+              
+              int readIdx = (writeIdx - delaySamples + maxDelaySamples) % maxDelaySamples;
+              channelData[i] = delayData[readIdx];
+              
+              writeIdx = (writeIdx + 1) % maxDelaySamples;
+          }
+      }
+      mainDelayWriteIndex = (mainDelayWriteIndex + numSamples) % maxDelaySamples;
+  }
+
   // Run the sample-by-sample DSP loop
   float* smoothedGains = smoothedGainBuffer.getWritePointer(0);
+  bool anyTransient = false;
+  bool anySustain = false;
+  float sumL = 0.0f;
+
   for (int i = 0; i < numSamples; ++i) {
       float keySample = monoKey[i];
 
       // A) Detector
       detectorEngine.processSample(keySample);
       float L = detectorEngine.getLevelDb();
+      sumL += L;
 
       // B) AttackGuard
       auto attackGuardOutput = attackGuard.processSample(keySample, L);
+      if (attackGuardOutput.validAttack) {
+          anyTransient = true;
+          cadenceTracker.noteOnset();
+      }
+      cadenceTracker.tick(1);
 
       // C) FundamentalEstimator
       fundamentalEstimator.processSample(keySample);
@@ -587,6 +758,9 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
 
       // D) SustainAnalyzer + FeedbackDetector
       auto sustainOutput = sustainAnalyzer.processSample(keySample, L, f0Estimate, 0.0f);
+      if (sustainOutput.sustainProtection) {
+          anySustain = true;
+      }
       auto feedbackOutput = feedbackDetector.processSample(keySample, L, f0Estimate, attackGuardOutput.transientStrength, sidechainActive);
 
       // E) State machine
@@ -624,8 +798,9 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
 
       float targetGain = gainComputer.processSample(gainInput);
 
-      // G) Gain smoother
-      float activeRelease = (stateOutput.adaptiveReleaseMs > 0.0f) ? stateOutput.adaptiveReleaseMs : releaseVal;
+      // G) Gain smoother (combine cadence and sustain adaptive release via min)
+      float sustainRelease = (stateOutput.adaptiveReleaseMs > 0.0f) ? stateOutput.adaptiveReleaseMs : releaseVal;
+      float activeRelease = cadenceTracker.getEffectiveRelease(sustainRelease);
       gainSmoother.setCloseTimeMs(0, activeRelease);
 
       float smoothedGain = gainSmoother.processSample(targetGain, 0);
@@ -638,6 +813,26 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
           realTimeState.lastGain.store(smoothedGain);
       }
   }
+
+  // Observe Noise Floor
+  float avgL = sumL / static_cast<float>(numSamples);
+  float logEnergyDb[1] = { avgL };
+  ChugGate::DSP::NoiseFloorEstimator::ProcessFlags noiseFlags;
+  noiseFlags.confidentlyClosed = (getCurrentState() == ChugGate::DSP::PerformanceStateMachine::State::Closed);
+  noiseFlags.transientActivity = anyTransient;
+  noiseFlags.signalAboveNoiseModel = (avgL > noiseFloorEstimator.getBroadbandFloorDb() + noiseSnrMarginVal);
+  noiseFlags.harmonicOrSustainedNote = anySustain;
+  noiseFlags.externalKeyActive = sidechainActive;
+  noiseFlags.decayingNote = (getCurrentState() == ChugGate::DSP::PerformanceStateMachine::State::Release);
+
+  noiseFloorEstimator.process(logEnergyDb, 1, numSamples, noiseFlags);
+
+  // Update real-time state for noise floor and alignment
+  realTimeState.noiseBroadbandFloor.store(noiseFloorEstimator.getBroadbandFloorDb());
+  realTimeState.noiseLowBandFloor.store(noiseFloorEstimator.getBandFloorDb(1));
+  realTimeState.noiseMidBandFloor.store(noiseFloorEstimator.getBandFloorDb(2));
+  realTimeState.noiseHighBandFloor.store(noiseFloorEstimator.getBandFloorDb(3));
+  realTimeState.alignmentOffset.store(alignmentDelayMs);
 
   // 5) Apply smoothed broadband gain and trim to main output channels (in-place)
   if (enabled && !bypassed && listenModeVal == 0) {
@@ -715,6 +910,40 @@ void ChugGateAudioProcessor::setStateInformation(const void *data,
   {
     stateManager->loadFullState(state);
   }
+}
+
+bool ChugGateAudioProcessor::applyNoiseLearn() noexcept {
+    if (noiseFloorEstimator.applySuggestions()) {
+        const auto& sugg = noiseFloorEstimator.getAppliedSuggestions();
+        if (sugg.valid) {
+            if (auto* paramOpen = apvts.getParameter(ChugGate::ParameterIDs::Global::thresholdOpen)) {
+                paramOpen->setValueNotifyingHost(paramOpen->convertTo0to1(sugg.openThresholdDb));
+            }
+            if (auto* paramHyst = apvts.getParameter(ChugGate::ParameterIDs::Global::hysteresis)) {
+                paramHyst->setValueNotifyingHost(paramHyst->convertTo0to1(sugg.hysteresisDb));
+            }
+            if (sugg.humRejectionEnabledHint) {
+                if (auto* paramHum = apvts.getParameter(ChugGate::ParameterIDs::Key::humMode)) {
+                    paramHum->setValueNotifyingHost(paramHum->convertTo0to1(3.0f)); // Auto
+                }
+            }
+            return true;
+        }
+    }
+    return false;
+}
+
+bool ChugGateAudioProcessor::acceptAlignment() noexcept {
+    if (alignmentAnalyzer.accept()) {
+        auto result = alignmentAnalyzer.getAcceptedResult();
+        if (result.valid) {
+            if (auto* param = apvts.getParameter(ChugGate::ParameterIDs::Key::alignmentOffset)) {
+                param->setValueNotifyingHost(param->convertTo0to1(result.offsetMs));
+            }
+            return true;
+        }
+    }
+    return false;
 }
 
 juce::AudioProcessor *JUCE_CALLTYPE createPluginFilter() {

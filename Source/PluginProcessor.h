@@ -12,6 +12,10 @@
 #include "DSP/PerformanceStateMachine.h"
 #include "DSP/GainComputer.h"
 #include "DSP/GainSmoother.h"
+#include "DSP/CadenceTracker.h"
+#include "DSP/NoiseFloorEstimator.h"
+#include "DSP/AlignmentAnalyzer.h"
+#include "DSP/FractionalDelay.h"
 
 class ChugGateAudioProcessorEditor;
 
@@ -79,6 +83,14 @@ public:
     return realTimeState.lastGain.load();
   }
 
+  // Phase E non-realtime hooks
+  void startNoiseLearn() noexcept { noiseFloorEstimator.startLearn(); }
+  bool applyNoiseLearn() noexcept;
+  void startAlignment() noexcept { alignmentAnalyzer.startAlign(); }
+  bool acceptAlignment() noexcept;
+  bool processOfflineAlignment() noexcept { return alignmentAnalyzer.processOfflineAnalysis(); }
+  bool finishAlignmentCalibration() noexcept { return alignmentAnalyzer.finishCalibrationChunk(); }
+
 private:
   float getParamValue(const std::atomic<float>* paramPtr, float defaultValue = 0.0f) const noexcept;
 
@@ -97,6 +109,10 @@ private:
   ChugGate::DSP::PerformanceStateMachine stateMachine;
   ChugGate::DSP::GainComputer gainComputer;
   ChugGate::DSP::GainSmoother gainSmoother;
+  ChugGate::DSP::CadenceTracker cadenceTracker;
+  ChugGate::DSP::NoiseFloorEstimator noiseFloorEstimator;
+  ChugGate::DSP::AlignmentAnalyzer alignmentAnalyzer;
+  ChugGate::DSP::FractionalDelay fractionalDelay;
 
   // Real-time parameter pointers
   struct ParameterPointers {
@@ -159,12 +175,31 @@ private:
     std::atomic<float>* feedbackFloor = nullptr;
     std::atomic<float>* feedbackRequireExtKey = nullptr;
     std::atomic<float>* feedbackSafetyTimeout = nullptr;
+
+    // Cadence
+    std::atomic<float>* cadenceEnabled = nullptr;
+    std::atomic<float>* cadenceAmount = nullptr;
+    std::atomic<float>* cadenceReleaseFraction = nullptr;
+    std::atomic<float>* cadenceSourceMode = nullptr;
+
+    // Noise Learn
+    std::atomic<float>* noiseSnrMargin = nullptr;
+    std::atomic<float>* noiseAdaptiveEnabled = nullptr;
+    std::atomic<float>* noiseAdaptiveRate = nullptr;
+
+    // Alignment
+    std::atomic<float>* alignmentOffset = nullptr;
+    std::atomic<float>* lookahead = nullptr;
   };
   ParameterPointers params;
 
   // Auxiliary buffers for block processing
   juce::AudioBuffer<float> monoKeyBuffer;
   juce::AudioBuffer<float> smoothedGainBuffer;
+  juce::AudioBuffer<float> monoMainBuffer;
+  juce::AudioBuffer<float> mainDelayBuffers;
+  int mainDelayWriteIndex = 0;
+  int currentLatency = 0;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChugGateAudioProcessor)
 };
