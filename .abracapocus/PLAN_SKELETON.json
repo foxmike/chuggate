@@ -1,0 +1,320 @@
+{
+  "plan_name": "CHUGGATE",
+  "purpose": "Build ChugGate: a performance-aware adaptive gate, downward expander, and multiband noise controller for electric guitar and bass. C++20/JUCE plugin targeting VST3 and Standalone with external sidechain input. 8-state performance engine, DI key alignment with fractional delay, Pick Attack Guard, Sustain Intelligence with lightweight fundamental estimator, Feedback Friend, Riff Cadence Engine, Noise Learn, multiband gating with Hiss Curtain, attack/tail integrity analysis, and Performance Timeline diagnostic GUI. Full product specification in CHUGGATE_SPEC.md.",
+  "async_strategy": "Phases run sequentially. Within each phase, tasks with disjoint write paths run in parallel waves. Fan-in tasks (processBlock wiring, editor integration) depend on all upstream tasks in the same phase and are the sole owner of CMakeLists.txt, PluginProcessor, and PluginEditor within that phase. The C++ language adapter provides cmake/ctest verification inference — task verification_commands arrays are left empty.",
+  "cost_estimate": "medium-high",
+  "operator_questions": [],
+  "phases": [
+    {
+      "phase_id": "a",
+      "goal": "Project scaffold, build system, APVTS parameter infrastructure, and state engine.\n\nCreate the ChugGate JUCE plugin project. Inspect ShredBoost and ShredSpace CMakeLists.txt for known-working structure and follow same conventions for plugin code, manufacturer code, company name, bundle ID, version, copy-after-build.\n\nCMakeLists.txt: juce_add_plugin targeting VST3 + Standalone. CMakePresets.json, scripts/build_all.sh, JUCE as git submodule.\n\nPluginProcessor: configure main input bus, optional sidechain input bus, and output through AudioProcessor::BusesProperties. Implement isBusesLayoutSupported for mono, stereo, and stereo+sidechain layouts. Standalone must operate safely without external sidechain. processBlock stub, state save/restore with schema versioning.\n\nParameterIDs.h: complete stable v1.0 parameter inventory. Global: enabled, mode (Chug/Lead/Hybrid/Manual), topology (FullBand/DualBand/TriBand/HissCurtain), gainMode (HardGate/SoftGate/DownwardExpander), thresholdOpen (-100 to 0dBFS), hysteresis (0.5-24dB — thresholdClose is DERIVED as open-hysteresis, not stored), attack, hold, release, maxAdaptiveRelease, floor, ratio, knee, curve, lookahead, outputTrim, bypass. Key: source, externalBlend, hpfEnabled, hpfFrequency, hpfSlope, lpfEnabled, lpfFrequency, lpfSlope, emphasisFreq, emphasisGain, emphasisQ, humMode (off/50Hz/60Hz/auto), humHarmonics, humNotchQ, humImmunityAmount, alignmentOffset, fallbackMode, listenMode. AttackGuard: enabled, amount, sensitivity, frequency, decay, softNoteAssist, maxThresholdReduction, confirmationWindow. Sustain: enabled, amount, releaseExtension, harmonicWeight, decayWeight, noiseWeight, feedbackEnabled, feedbackSensitivity, feedbackMinDuration, feedbackMaxHold, feedbackFreqMin, feedbackFreqMax, feedbackFloor, feedbackRequireExtKey, feedbackSafetyTimeout. Cadence: enabled, amount, releaseFraction, sourceMode (audio/hostTempo/combined/off). Noise learn: snrMargin, adaptiveEnabled, adaptiveRate. Per-band (low/mid/high): floor, thresholdOffset, attackOffset, holdOffset, releaseMultiplier, solo, mute, detectorWeighting. HissCurtain: minFreq, maxFreq, depth. Stereo: linkMode, linkAmount. Crossovers: dualFreq, triLowFreq, triHighFreq. Audition: rejectedMode (off/all/fullBand/weight/voice/hiss/hissCurtain/noiseModel/key), stateFilterMode (off/hold/sustain/release/closed). Profile and tuning index. A/B state.\n\nState engine: XML state with schema_version, A/B slots, learned noise profile storage, DI alignment result storage, factory presets from Resources/Presets/ (read-only), user presets via per-user app data.\n\n.gitignore: build/, cmake-build-*, state/, .abracapocus/state/, .abracapocus/logs/, .abracapocus/reports/.",
+      "expected_changed_files": [
+        "CMakeLists.txt",
+        "CMakePresets.json",
+        "scripts/build_all.sh",
+        "Source/PluginProcessor.h",
+        "Source/PluginProcessor.cpp",
+        "Source/PluginEditor.h",
+        "Source/PluginEditor.cpp",
+        "Source/ParameterIDs.h",
+        "Source/StateManager.h",
+        "Source/StateManager.cpp",
+        "README.md",
+        ".gitignore",
+        ".gitmodules",
+        "tests/TestMain.cpp"
+      ],
+      "async_notes": "Wave 1: a.1 (CMakeLists + build + JUCE submodule) and a.4 (.gitignore + README + TestMain) independent. Wave 2: a.2 (ParameterIDs + APVTS + PluginProcessor) depends on a.1 — sole owner of CMakeLists, Processor, ParameterIDs. Wave 3: a.3 (StateManager + PluginEditor) depends on a.2.",
+      "risk_notes": "a.2 sole CMakeLists/Processor owner. Sidechain bus requires correct isBusesLayoutSupported. thresholdClose is derived display value, not stored parameter.",
+      "estimated_task_count": 4,
+      "task_hints": [
+        {"title": "CMakeLists.txt, CMakePresets.json, build scripts, JUCE submodule", "selected_backend": "codex_cli"},
+        {"title": "ParameterIDs (complete v1.0 inventory), APVTS, PluginProcessor with sidechain bus", "selected_backend": "codex_cli"},
+        {"title": "StateManager (A/B, noise profile, alignment storage, presets) and PluginEditor skeleton", "selected_backend": "antigravity_cli"},
+        {"title": "gitignore, README, TestMain.cpp", "selected_backend": "pi_cli", "model": "openrouter/google/gemma-4-31b-it"}
+      ]
+    },
+    {
+      "phase_id": "b",
+      "goal": "Detector engine: key source routing, key conditioning, Powerline Shield, and envelope detection.\n\nSee CHUGGATE_SPEC.md sections 4-6 for complete DSP math.\n\nKeySourceRouter: source selection, envelope blending, confidence, internal fallback.\nKeyConditioner: HPF/LPF/emphasis biquads, key listen mode.\nPowerlineShield: 50/60Hz notch with harmonics, auto-detect, hum immunity.\nDetectorEngine: peak/RMS blend, attack/release ballistics, log level. Detector and audible gain ballistics are SEPARATE.",
+      "expected_changed_files": [
+        "Source/DSP/KeySourceRouter.h",
+        "Source/DSP/KeySourceRouter.cpp",
+        "Source/DSP/KeyConditioner.h",
+        "Source/DSP/KeyConditioner.cpp",
+        "Source/DSP/PowerlineShield.h",
+        "Source/DSP/PowerlineShield.cpp",
+        "Source/DSP/DetectorEngine.h",
+        "Source/DSP/DetectorEngine.cpp",
+        "CMakeLists.txt",
+        "tests/DetectorTests.cpp"
+      ],
+      "async_notes": "Wave 1: b.1 (KeySourceRouter) and b.2 (KeyConditioner + PowerlineShield) independent. Wave 2: b.3 (DetectorEngine + CMakeLists) depends on b.1, b.2 — sole CMakeLists owner. Wave 3: b.4 (tests) depends on all.",
+      "risk_notes": "Sidechain channel handling must match JUCE bus layout from phase A.",
+      "estimated_task_count": 4,
+      "task_hints": [
+        {"title": "KeySourceRouter — source selection, envelope blending, confidence, fallback", "selected_backend": "codex_cli"},
+        {"title": "KeyConditioner and PowerlineShield — HPF/LPF/emphasis, hum notches, auto-detect", "selected_backend": "codex_cli"},
+        {"title": "DetectorEngine — peak/RMS blend, attack/release ballistics, CMakeLists", "selected_backend": "antigravity_cli"},
+        {"title": "Detector engine, key conditioning, and hum rejection tests", "selected_backend": "pi_cli", "model": "openrouter/z-ai/glm-5.2"}
+      ]
+    },
+    {
+      "phase_id": "c",
+      "goal": "Performance state machine, dual-threshold hysteresis, gain computation and smoothing.\n\nSee CHUGGATE_SPEC.md sections 7, 15, 16 for complete DSP math.\n\n8-state engine: Closed, Primed, Attack, Open, Hold, Sustain, Release, Reopen. Hysteresis: T_close = T_open - H (computed, not stored). Reopen reverses gain path smoothly.\n\nGainComputer: hard gate, soft gate, downward expander laws. Curve shape with gamma.\nGainSmoother: separate open/close constants per band.\n\nWire into processBlock.",
+      "expected_changed_files": [
+        "Source/DSP/PerformanceStateMachine.h",
+        "Source/DSP/PerformanceStateMachine.cpp",
+        "Source/DSP/GainComputer.h",
+        "Source/DSP/GainComputer.cpp",
+        "Source/DSP/GainSmoother.h",
+        "Source/DSP/GainSmoother.cpp",
+        "Source/PluginProcessor.h",
+        "Source/PluginProcessor.cpp",
+        "CMakeLists.txt",
+        "tests/StateMachineTests.cpp"
+      ],
+      "async_notes": "Wave 1: c.1 (StateMachine) and c.2 (GainComputer + GainSmoother) independent. Wave 2: c.3 (processBlock + CMakeLists) depends on c.1, c.2 — sole Processor/CMakeLists owner. Wave 3: c.4 (tests) depends on c.1, c.2.",
+      "risk_notes": "PluginProcessor fan-in in c.3. State machine transitions must be exhaustively tested.",
+      "estimated_task_count": 4,
+      "task_hints": [
+        {"title": "PerformanceStateMachine — 8 states, dual-threshold hysteresis, reopen", "selected_backend": "codex_cli"},
+        {"title": "GainComputer and GainSmoother — hard/soft/expander laws, curve shape, per-band", "selected_backend": "codex_cli"},
+        {"title": "processBlock wiring — detector → state machine → gain → output, CMakeLists", "selected_backend": "antigravity_cli"},
+        {"title": "State machine transition and gain computation tests", "selected_backend": "pi_cli", "model": "openrouter/z-ai/glm-5.2"}
+      ]
+    },
+    {
+      "phase_id": "d",
+      "goal": "Pick Attack Guard, Sustain Intelligence with lightweight fundamental estimator, and Feedback Friend.\n\nSee CHUGGATE_SPEC.md sections 8-10 for complete DSP math.\n\nAttackGuard: band-limited transient detection with false-trigger protection.\n\nLightweight fundamental estimator (Source/DSP/FundamentalEstimator.h/.cpp): required by SustainAnalyzer and FeedbackDetector for harmonicity calculation. Use bounded autocorrelation or harmonic product spectrum — does NOT need full YIN/note tracking (that's ShredEQ territory). Must produce: estimatedFundamental, confidence, timestamp, validity. Runs at decimated control rate.\n\nSustainAnalyzer: harmonicity using FundamentalEstimator f0, spectral stability, decay slope. Composite sustain score. Adaptive release.\n\nFeedbackDetector: harmonic confidence, safety bounds mandatory.\n\nIntegrate all into PerformanceStateMachine.",
+      "expected_changed_files": [
+        "Source/DSP/AttackGuard.h",
+        "Source/DSP/AttackGuard.cpp",
+        "Source/DSP/FundamentalEstimator.h",
+        "Source/DSP/FundamentalEstimator.cpp",
+        "Source/DSP/SustainAnalyzer.h",
+        "Source/DSP/SustainAnalyzer.cpp",
+        "Source/DSP/FeedbackDetector.h",
+        "Source/DSP/FeedbackDetector.cpp",
+        "Source/DSP/PerformanceStateMachine.h",
+        "Source/DSP/PerformanceStateMachine.cpp",
+        "Source/PluginProcessor.cpp",
+        "CMakeLists.txt",
+        "tests/AttackGuardTests.cpp",
+        "tests/SustainTests.cpp"
+      ],
+      "async_notes": "Wave 1: d.1 (AttackGuard) and d.2 (FundamentalEstimator) independent. Wave 2: d.3 (SustainAnalyzer + FeedbackDetector) depends on d.2. Wave 3: d.4 (state machine integration + CMakeLists) depends on all — sole Processor/CMakeLists owner. Wave 4: d.5 (tests) depends on d.1, d.2, d.3.",
+      "risk_notes": "PerformanceStateMachine and PluginProcessor modified in d.4 — serialize after phase C. FundamentalEstimator may need small fixed DFT.",
+      "estimated_task_count": 5,
+      "task_hints": [
+        {"title": "AttackGuard — transient detection, false-trigger protection", "selected_backend": "codex_cli"},
+        {"title": "FundamentalEstimator — bounded autocorrelation, confidence, control-rate", "selected_backend": "codex_cli"},
+        {"title": "SustainAnalyzer and FeedbackDetector — harmonicity, decay, safety bounds", "selected_backend": "codex_cli"},
+        {"title": "State machine integration — AttackGuard/Sustain/Feedback wiring, CMakeLists", "selected_backend": "antigravity_cli"},
+        {"title": "Attack guard, fundamental estimator, and sustain tests", "selected_backend": "pi_cli", "model": "openrouter/z-ai/glm-5.2"}
+      ]
+    },
+    {
+      "phase_id": "e",
+      "goal": "Riff Cadence Engine, Noise Learn system, and DI key alignment.\n\nSee CHUGGATE_SPEC.md sections 11-13 for complete DSP math.\n\nCadenceTracker: onset intervals, robust median, release constraint.\nNoiseFloorEstimator: noise learn workflow, per-band percentile, slow adaptation.\nAlignmentAnalyzer: onset cross-correlation, calibration workflow.\nFractionalDelay (Source/DSP/FractionalDelay.h/.cpp): preallocated circular buffer with third-order Lagrange interpolation for sub-sample alignment precision. Range ±25ms default, ±100ms extended.\n\nWire cadence into adaptive release, noise learn into threshold recommendations, alignment into key delay path.",
+      "expected_changed_files": [
+        "Source/DSP/CadenceTracker.h",
+        "Source/DSP/CadenceTracker.cpp",
+        "Source/DSP/NoiseFloorEstimator.h",
+        "Source/DSP/NoiseFloorEstimator.cpp",
+        "Source/DSP/AlignmentAnalyzer.h",
+        "Source/DSP/AlignmentAnalyzer.cpp",
+        "Source/DSP/FractionalDelay.h",
+        "Source/DSP/FractionalDelay.cpp",
+        "Source/PluginProcessor.cpp",
+        "CMakeLists.txt",
+        "tests/CadenceTests.cpp",
+        "tests/AlignmentTests.cpp"
+      ],
+      "async_notes": "Wave 1: e.1 (CadenceTracker) and e.2 (NoiseFloorEstimator) and e.3 (AlignmentAnalyzer + FractionalDelay) all independent. Wave 2: e.4 (processBlock integration + CMakeLists) depends on all — sole Processor/CMakeLists owner. Wave 3: e.5 (tests) depends on e.1, e.2, e.3.",
+      "risk_notes": "AlignmentAnalyzer cross-correlation runs off audio thread. FractionalDelay uses Lagrange interpolation in v1.0.",
+      "estimated_task_count": 5,
+      "task_hints": [
+        {"title": "CadenceTracker — onset intervals, median estimate, release constraint", "selected_backend": "antigravity_cli"},
+        {"title": "NoiseFloorEstimator — noise learn, per-band percentile, slow adaptation", "selected_backend": "codex_cli"},
+        {"title": "AlignmentAnalyzer and FractionalDelay — cross-correlation, Lagrange interpolation", "selected_backend": "codex_cli"},
+        {"title": "processBlock integration for cadence, noise, alignment, CMakeLists", "selected_backend": "antigravity_cli"},
+        {"title": "Cadence, noise learn, and alignment tests", "selected_backend": "pi_cli", "model": "openrouter/z-ai/glm-5.2"}
+      ]
+    },
+    {
+      "phase_id": "f",
+      "goal": "Multiband: LR4 crossovers, dual/tri band gate, Hiss Curtain, per-band gain.\n\nSee CHUGGATE_SPEC.md sections 14-16, 20 for complete DSP math.\n\nCrossoverSplitter: LR4 2-way and 3-way, complementary tree, magnitude reconstruction tolerance-based (not sample-identical). MultibandGate: per-band gain targets and smoothing. HissCurtain: SNR-driven TPT LP filter.\n\nTopology selector: Full Band bypasses splitter, Dual/Tri activate splitter+gate, Hiss Curtain activates curtain module. Crossfade transitions.",
+      "expected_changed_files": [
+        "Source/DSP/CrossoverSplitter.h",
+        "Source/DSP/CrossoverSplitter.cpp",
+        "Source/DSP/MultibandGate.h",
+        "Source/DSP/MultibandGate.cpp",
+        "Source/DSP/HissCurtain.h",
+        "Source/DSP/HissCurtain.cpp",
+        "Source/PluginProcessor.h",
+        "Source/PluginProcessor.cpp",
+        "CMakeLists.txt",
+        "tests/MultibandGateTests.cpp"
+      ],
+      "async_notes": "Wave 1: f.1 (CrossoverSplitter) standalone. Wave 2: f.2 (MultibandGate) and f.3 (HissCurtain) depend on f.1 but independent of each other. Wave 3: f.4 (topology selector + processBlock + CMakeLists) depends on all — sole Processor/CMakeLists owner. Wave 4: f.5 (tests) depends on all.",
+      "risk_notes": "PluginProcessor fan-in in f.4. Topology crossfade must not click.",
+      "estimated_task_count": 5,
+      "task_hints": [
+        {"title": "CrossoverSplitter — LR4 2-way/3-way, complementary tree", "selected_backend": "codex_cli"},
+        {"title": "MultibandGate — per-band gain targets, smoothing, controls", "selected_backend": "antigravity_cli"},
+        {"title": "HissCurtain — SNR-driven LP, TPT filter, log-freq smoothing", "selected_backend": "codex_cli"},
+        {"title": "Topology selector, processBlock wiring, crossfade, CMakeLists", "selected_backend": "antigravity_cli"},
+        {"title": "Multiband reconstruction, crossover, and Hiss Curtain tests", "selected_backend": "pi_cli", "model": "openrouter/z-ai/glm-5.2"}
+      ]
+    },
+    {
+      "phase_id": "g",
+      "goal": "Lookahead delay, stereo linking, anomaly protection, and rejected-signal routing.\n\nSee CHUGGATE_SPEC.md sections 17-19, 20.5.\n\nLookaheadDelay: circular buffer, off/0.25/0.5/1/2/5/10ms, setLatencySamples, zero default.\nStereoLinker: Max/Energy/Average/DualMono, link percentage, mono safety warning.\nAnomalyGuard: Cable Spike Guard, Stuck-Key detection, Dropout handling.\nRejectedSignalRouter: r[n] = x[n]-y[n], per-band, state-triggered audition.",
+      "expected_changed_files": [
+        "Source/DSP/LookaheadDelay.h",
+        "Source/DSP/LookaheadDelay.cpp",
+        "Source/DSP/StereoLinker.h",
+        "Source/DSP/StereoLinker.cpp",
+        "Source/DSP/AnomalyGuard.h",
+        "Source/DSP/AnomalyGuard.cpp",
+        "Source/DSP/RejectedSignalRouter.h",
+        "Source/DSP/RejectedSignalRouter.cpp",
+        "Source/PluginProcessor.h",
+        "Source/PluginProcessor.cpp",
+        "CMakeLists.txt",
+        "tests/StereoTests.cpp",
+        "tests/LookaheadTests.cpp"
+      ],
+      "async_notes": "Wave 1: g.1 (LookaheadDelay) and g.2 (StereoLinker) and g.3 (AnomalyGuard + RejectedSignalRouter) all independent. Wave 2: g.4 (processBlock wiring + CMakeLists) depends on all — sole Processor/CMakeLists owner. Wave 3: g.5 (tests) depends on g.1, g.2, g.3.",
+      "risk_notes": "PluginProcessor heavily modified — fan-in in g.4. Lookahead must call setLatencySamples.",
+      "estimated_task_count": 5,
+      "task_hints": [
+        {"title": "LookaheadDelay — circular buffer, host latency reporting", "selected_backend": "codex_cli"},
+        {"title": "StereoLinker — Max/Energy/Avg/DualMono, link percentage, mono safety", "selected_backend": "antigravity_cli"},
+        {"title": "AnomalyGuard and RejectedSignalRouter — spike guard, stuck-key, audition routing", "selected_backend": "antigravity_cli"},
+        {"title": "processBlock wiring — lookahead, stereo, anomaly, rejected, CMakeLists", "selected_backend": "antigravity_cli"},
+        {"title": "Stereo, lookahead, and anomaly tests", "selected_backend": "pi_cli", "model": "openrouter/z-ai/glm-5.2"}
+      ]
+    },
+    {
+      "phase_id": "h",
+      "goal": "Analyzer system: Performance Timeline data, Noise Fingerprint, DI Alignment Scope, Attack Integrity, Tail Integrity, and analysis FIFO.\n\nAnalysisFifo (Source/Analysis/AnalysisFifo.h/.cpp): lock-free SPSC via juce::AbstractFifo. Carries all analysis data. Skip frames, fixed memory.\n\nPerformanceHistory (Source/Analysis/PerformanceHistory.h/.cpp): ring buffer for timeline — envelopes, thresholds, noise floor, state lane, gain, transients, sustain confidence. History 2-30s.\n\nNoiseFingerprint (Source/Analysis/NoiseFingerprint.h/.cpp): time-averaged spectral display of learned noise.\n\nAlignmentScopeData (Source/Analysis/AlignmentScopeData.h/.cpp): key/main onset waveforms, correlation curve, offset, confidence.\n\nAttackIntegrityAnalyzer (Source/Analysis/AttackIntegrityAnalyzer.h/.cpp): per-onset attack preservation ratio A_r = sum(y²)/sum(x²) over attack window. Summarizes preserved/partial/missed attacks. Uses data already collected by Performance Timeline.\n\nTailIntegrityAnalyzer (Source/Analysis/TailIntegrityAnalyzer.h/.cpp): per-tail comparison of main decay vs output decay vs sustain confidence vs closure point. Makes lead-note choking visible.\n\nAll on background/message thread. Quality modes: Off, Live, Studio, Diagnose.",
+      "expected_changed_files": [
+        "Source/Analysis/AnalysisFifo.h",
+        "Source/Analysis/AnalysisFifo.cpp",
+        "Source/Analysis/PerformanceHistory.h",
+        "Source/Analysis/PerformanceHistory.cpp",
+        "Source/Analysis/NoiseFingerprint.h",
+        "Source/Analysis/NoiseFingerprint.cpp",
+        "Source/Analysis/AlignmentScopeData.h",
+        "Source/Analysis/AlignmentScopeData.cpp",
+        "Source/Analysis/AttackIntegrityAnalyzer.h",
+        "Source/Analysis/AttackIntegrityAnalyzer.cpp",
+        "Source/Analysis/TailIntegrityAnalyzer.h",
+        "Source/Analysis/TailIntegrityAnalyzer.cpp",
+        "Source/PluginProcessor.cpp",
+        "CMakeLists.txt",
+        "tests/AnalysisTests.cpp"
+      ],
+      "async_notes": "Wave 1: h.1 (AnalysisFifo) standalone. Wave 2: h.2 (PerformanceHistory) and h.3 (NoiseFingerprint + AlignmentScopeData) depend on h.1 but independent. Wave 3: h.4 (AttackIntegrity + TailIntegrity) depends on h.2. Wave 4: h.5 (Processor FIFO push + CMakeLists) depends on all — sole Processor/CMakeLists owner. Wave 5: h.6 (tests) depends on all.",
+      "risk_notes": "PluginProcessor modified for FIFO push — serialize after phase G. AbstractFifo sizing must handle all channels.",
+      "estimated_task_count": 6,
+      "task_hints": [
+        {"title": "AnalysisFifo — lock-free SPSC, multi-channel data transport", "selected_backend": "codex_cli"},
+        {"title": "PerformanceHistory — ring buffer time series for timeline visualization", "selected_backend": "antigravity_cli"},
+        {"title": "NoiseFingerprint and AlignmentScopeData — spectral noise display, correlation data", "selected_backend": "antigravity_cli"},
+        {"title": "AttackIntegrityAnalyzer and TailIntegrityAnalyzer — onset/tail quality metrics", "selected_backend": "codex_cli"},
+        {"title": "Processor analysis FIFO push, CMakeLists", "selected_backend": "antigravity_cli"},
+        {"title": "Analysis data pipeline tests", "selected_backend": "pi_cli", "model": "openrouter/z-ai/glm-5.2"}
+      ]
+    },
+    {
+      "phase_id": "i",
+      "goal": "GUI: LookAndFeel, all pages, Performance Timeline, state indicator, editor layout.\n\nSee CHUGGATE_SPEC.md section 21 for complete GUI spec. Correct LookAndFeel_V4 overrides. Default 1280x760, min 920x580.\n\nChugLookAndFeel: fast/mechanical/precise feel, gate-state accents.\nPerformanceTimeline: central visualization rendering from PerformanceHistory.\nStateIndicator: state + duration + gain + reason.\nPerformPage + ShapePage: fast controls, macros, multiband panel.\nDetectPage: key conditioning, hum, threshold, transient, sustain.\nAlignPage: alignment scope, calibrate button.\nDiagnosePage: noise fingerprint, rejected signal, attack/tail integrity display.\nMainHeader: preset, profile, A/B, key, sidechain status, latency, CPU.\nPluginEditor: tabbed views, resizing, wiring.",
+      "expected_changed_files": [
+        "Source/GUI/ChugLookAndFeel.h",
+        "Source/GUI/ChugLookAndFeel.cpp",
+        "Source/GUI/PerformanceTimeline.h",
+        "Source/GUI/PerformanceTimeline.cpp",
+        "Source/GUI/StateIndicator.h",
+        "Source/GUI/StateIndicator.cpp",
+        "Source/GUI/PerformPage.h",
+        "Source/GUI/PerformPage.cpp",
+        "Source/GUI/ShapePage.h",
+        "Source/GUI/ShapePage.cpp",
+        "Source/GUI/DetectPage.h",
+        "Source/GUI/DetectPage.cpp",
+        "Source/GUI/AlignPage.h",
+        "Source/GUI/AlignPage.cpp",
+        "Source/GUI/DiagnosePage.h",
+        "Source/GUI/DiagnosePage.cpp",
+        "Source/GUI/MainHeader.h",
+        "Source/GUI/MainHeader.cpp",
+        "Source/PluginEditor.h",
+        "Source/PluginEditor.cpp",
+        "CMakeLists.txt"
+      ],
+      "async_notes": "Wave 1: i.1 (LookAndFeel) standalone. Wave 2: i.2 (PerformanceTimeline + StateIndicator) and i.3 (PerformPage + ShapePage) depend on i.1 but independent. Wave 3: i.4 (DetectPage) and i.5 (AlignPage + DiagnosePage) depend on i.1 but independent. Wave 4: i.6 (MainHeader + PluginEditor assembly) fan-in — sole Editor/CMakeLists owner.",
+      "risk_notes": "Antigravity-heavy phase. PluginEditor fan-in in i.6. Known JUCE API: LookAndFeel_V4 signatures.",
+      "estimated_task_count": 6,
+      "task_hints": [
+        {"title": "ChugLookAndFeel — gate-state accents, mechanical feel, correct JUCE overrides", "selected_backend": "antigravity_cli"},
+        {"title": "PerformanceTimeline and StateIndicator — central visualization, state lane", "selected_backend": "antigravity_cli"},
+        {"title": "PerformPage and ShapePage — fast controls, macros, multiband panel", "selected_backend": "antigravity_cli"},
+        {"title": "DetectPage — key conditioning, hum, threshold, sustain controls", "selected_backend": "antigravity_cli"},
+        {"title": "AlignPage and DiagnosePage — alignment scope, noise fingerprint, integrity views", "selected_backend": "antigravity_cli"},
+        {"title": "MainHeader and PluginEditor assembly — tabs, resizing, header, CMakeLists", "selected_backend": "antigravity_cli"}
+      ]
+    },
+    {
+      "phase_id": "j",
+      "goal": "Profiles, tuning, factory presets, A/B comparison, and rejected-signal audition wiring.\n\n12 profiles: Tight Rhythm, Low-Tuned Rhythm, Fast Alternate Picking, Lead Sustain, Rhythm+Lead Hybrid, Controlled Feedback Lead, Pre-Amp DI, Post-Amp Hiss, DI-Keyed Reamp, Stereo Rhythm Bus, Active Bass, Distorted Bass.\n\nTuning integration: adjusts key HPF, crossover, detector weighting, pitch range, sustain bounds.\n\nA/B: extend StateManager, click-safe crossfade, copy A→B.\n\nFactory presets: categorized, gain-conscious. Preset browser in header.\n\nRejected-signal audition GUI wiring.",
+      "expected_changed_files": [
+        "Source/Profiles.h",
+        "Source/Profiles.cpp",
+        "Source/TuningProfiles.h",
+        "Source/TuningProfiles.cpp",
+        "Source/StateManager.h",
+        "Source/StateManager.cpp",
+        "Source/PluginProcessor.cpp",
+        "Source/PluginEditor.cpp",
+        "CMakeLists.txt",
+        "Resources/Presets/Rhythm_ModernTight.json",
+        "Resources/Presets/Lead_SingingSustain.json",
+        "Resources/Presets/PostAmp_HissSuppression.json",
+        "Resources/Presets/DIKeyed_Rhythm.json",
+        "Resources/Presets/Bass_ActiveNoiseControl.json",
+        "Resources/Presets/Diag_LearnMyRig.json",
+        "tests/StateTests.cpp"
+      ],
+      "async_notes": "Wave 1: j.1 (Profiles + Tuning) and j.2 (A/B state) independent. Wave 2: j.3 (factory preset assets) depends on j.1. Wave 3: j.4 (preset browser + audition GUI wiring + Processor/Editor/CMakeLists) depends on all — sole Processor/Editor/CMakeLists owner. Wave 4: j.5 (tests) depends on all.",
+      "risk_notes": "StateManager, PluginProcessor, PluginEditor modified — j.4 is fan-in. Preset JSON files are independent.",
+      "estimated_task_count": 5,
+      "task_hints": [
+        {"title": "Profile system and tuning integration — 12 profiles, tuning-dependent defaults", "selected_backend": "pi_cli", "model": "openrouter/z-ai/glm-5.2"},
+        {"title": "A/B state completion, click-safe bypass, crossfade switching", "selected_backend": "codex_cli"},
+        {"title": "Factory preset assets — categorized JSON files", "selected_backend": "pi_cli", "model": "openrouter/z-ai/glm-5.2"},
+        {"title": "Preset browser, audition GUI wiring, Processor/Editor/CMakeLists integration", "selected_backend": "antigravity_cli"},
+        {"title": "State, A/B, preset, and profile tests", "selected_backend": "pi_cli", "model": "openrouter/z-ai/glm-5.2"}
+      ]
+    },
+    {
+      "phase_id": "k",
+      "goal": "Validation scripts, release documentation, and verification.\n\nValidation script: build Release, ctest, RT-safety checks, zero-latency verification, all lookahead values report correct samples, bypass click-free, state round-trip, multiband reconstruction flat.\n\nRelease docs: verification checklist per spec section 31. Host testing that cannot run in CI documented honestly as requiring manual validation.\n\nPreset content refinement.",
+      "expected_changed_files": [
+        "scripts/validate.sh",
+        "docs/verification/chuggate_release.md",
+        "docs/verification/chuggate_phase_summary.md"
+      ],
+      "async_notes": "Wave 1: k.1 (validation) and k.2 (preset content) independent. Wave 2: k.3 (release docs) depends on k.1.",
+      "risk_notes": "Low risk — no DSP changes.",
+      "estimated_task_count": 3,
+      "task_hints": [
+        {"title": "Validation script — build, test, RT-safety, latency checks", "selected_backend": "pi_cli", "model": "openrouter/z-ai/glm-5.2"},
+        {"title": "Factory preset content refinement", "selected_backend": "pi_cli", "model": "openrouter/google/gemma-4-31b-it"},
+        {"title": "Release documentation and verification checklist", "selected_backend": "pi_cli", "model": "openrouter/google/gemma-4-31b-it"}
+      ]
+    }
+  ]
+}
