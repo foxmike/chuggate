@@ -45,6 +45,10 @@ target_sources(ChugGate
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
         Source/StateManager.cpp
+        Source/DSP/KeySourceRouter.cpp
+        Source/DSP/KeyConditioner.cpp
+        Source/DSP/PowerlineShield.cpp
+        Source/DSP/DetectorEngine.cpp
 )
 
 target_compile_definitions(ChugGate
@@ -71,6 +75,32 @@ add_executable(ChugGateTests
     tests/TestMain.cpp
 )
 
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/DetectorTests.cpp")
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/tests/DetectorTests.cpp"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests"
+        COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_BINARY_DIR}/tests/DetectorTests.cpp"
+        COMMENT "Generating stub DetectorTests.cpp"
+    )
+    target_sources(ChugGateTests
+        PRIVATE
+            "${CMAKE_CURRENT_BINARY_DIR}/tests/DetectorTests.cpp"
+            Source/DSP/KeySourceRouter.cpp
+            Source/DSP/KeyConditioner.cpp
+            Source/DSP/PowerlineShield.cpp
+            Source/DSP/DetectorEngine.cpp
+    )
+else()
+    target_sources(ChugGateTests
+        PRIVATE
+            tests/DetectorTests.cpp
+            Source/DSP/KeySourceRouter.cpp
+            Source/DSP/KeyConditioner.cpp
+            Source/DSP/PowerlineShield.cpp
+            Source/DSP/DetectorEngine.cpp
+    )
+endif()
+
 target_compile_definitions(ChugGateTests
     PRIVATE
         JUCE_WEB_BROWSER=0
@@ -81,6 +111,8 @@ target_compile_definitions(ChugGateTests
 
 target_link_libraries(ChugGateTests
     PRIVATE
+        juce::juce_dsp
+        juce::juce_events
         juce::juce_core
         juce::juce_recommended_config_flags
         juce::juce_recommended_warning_flags
