@@ -266,39 +266,279 @@ ChugGateAudioProcessor::ChugGateAudioProcessor()
       apvts(*this, nullptr, stateTreeType, ChugGate::createParameterLayout())
 {
     stateManager = std::make_unique<ChugGate::StateManager>(*this);
+
+    // Initialize parameter pointers
+    params.enabled = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::enabled);
+    params.bypass = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::bypass);
+    params.outputTrim = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::outputTrim);
+    params.listenMode = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::listenMode);
+    params.thresholdOpen = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::thresholdOpen);
+    params.hysteresis = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::hysteresis);
+    params.attack = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::attack);
+    params.hold = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::hold);
+    params.release = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::release);
+    params.floor = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::floor);
+    params.ratio = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::ratio);
+    params.knee = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::knee);
+    params.curve = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::curve);
+    params.gainMode = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::gainMode);
+    
+    params.keySource = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::source);
+    params.externalBlend = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::externalBlend);
+    params.fallbackMode = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::fallbackMode);
+    params.hpfEnabled = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::hpfEnabled);
+    params.hpfFrequency = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::hpfFrequency);
+    params.hpfSlope = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::hpfSlope);
+    params.lpfEnabled = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::lpfEnabled);
+    params.lpfFrequency = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::lpfFrequency);
+    params.lpfSlope = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::lpfSlope);
+    params.emphasisFreq = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::emphasisFreq);
+    params.emphasisGain = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::emphasisGain);
+    params.emphasisQ = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::emphasisQ);
+    params.humMode = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::humMode);
+    params.humHarmonics = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::humHarmonics);
+    params.humNotchQ = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::humNotchQ);
+    params.humImmunityAmount = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::humImmunityAmount);
 }
 
 void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
                                            int samplesPerBlock) {
-  juce::ignoreUnused(sampleRate, samplesPerBlock);
+  monoKeyBuffer.setSize(1, samplesPerBlock);
+  smoothedGainBuffer.setSize(1, samplesPerBlock);
+
+  const int numMainChannels = getMainBusNumInputChannels();
+  const int numSidechainChannels = getBusCount(true) > 1 ? getBus(true, 1)->getNumberOfChannels() : 0;
+
+  keySourceRouter.prepare(sampleRate, samplesPerBlock, numMainChannels, numSidechainChannels);
+  keyConditioner.prepare(sampleRate, samplesPerBlock);
+  powerlineShield.prepare(sampleRate, samplesPerBlock);
+  detectorEngine.prepare(sampleRate, samplesPerBlock);
+
+  stateMachine.prepare(sampleRate);
+  gainComputer.prepare(sampleRate);
+  gainSmoother.prepare(sampleRate, 1);
+
+  keySourceRouter.reset();
+  keyConditioner.reset();
+  powerlineShield.reset();
+  detectorEngine.reset();
+  stateMachine.reset();
+  gainComputer.reset();
+  gainSmoother.reset(1.0f);
 }
 
-void ChugGateAudioProcessor::releaseResources() {}
+void ChugGateAudioProcessor::releaseResources() {
+  monoKeyBuffer.setSize(0, 0);
+  smoothedGainBuffer.setSize(0, 0);
+}
 
-bool ChugGateAudioProcessor::isBusesLayoutSupported(
-    const BusesLayout &layouts) const {
-  const auto mainInput = layouts.getMainInputChannelSet();
-  const auto mainOutput = layouts.getMainOutputChannelSet();
+void ChugGateAudioProcessor::reset() {
+  keySourceRouter.reset();
+  keyConditioner.reset();
+  powerlineShield.reset();
+  detectorEngine.reset();
+  stateMachine.reset();
+  gainComputer.reset();
+  gainSmoother.reset(1.0f);
+}
 
-  if (mainInput != mainOutput || (mainInput != juce::AudioChannelSet::mono() &&
-                                  mainInput != juce::AudioChannelSet::stereo()))
-    return false;
-
-  const auto sidechain = layouts.getChannelSet(true, 1);
-
-  if (sidechain.isDisabled())
-    return true;
-
-  return mainInput == juce::AudioChannelSet::stereo() &&
-         (sidechain == juce::AudioChannelSet::mono() ||
-          sidechain == juce::AudioChannelSet::stereo());
+float ChugGateAudioProcessor::getParamValue(const std::atomic<float>* paramPtr, float defaultValue) const noexcept {
+  return paramPtr != nullptr ? paramPtr->load(std::memory_order_relaxed) : defaultValue;
 }
 
 void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
                                           juce::MidiBuffer &midiMessages) {
   juce::ScopedNoDenormals noDenormals;
-  juce::ignoreUnused(buffer);
   midiMessages.clear();
+
+  const int numSamples = buffer.getNumSamples();
+  if (numSamples <= 0)
+    return;
+
+  // Ensure auxiliary buffers are large enough
+  if (monoKeyBuffer.getNumSamples() < numSamples) {
+    monoKeyBuffer.setSize(1, numSamples, false, true, true);
+  }
+  if (smoothedGainBuffer.getNumSamples() < numSamples) {
+    smoothedGainBuffer.setSize(1, numSamples, false, true, true);
+  }
+
+  // Load parameters
+  const bool enabled = getParamValue(params.enabled, 1.0f) > 0.5f;
+  const bool bypassed = getParamValue(params.bypass, 0.0f) > 0.5f;
+  const float trimDb = getParamValue(params.outputTrim, 0.0f);
+  const float trimLinear = juce::Decibels::decibelsToGain(trimDb);
+
+  const int listenModeVal = static_cast<int>(getParamValue(params.listenMode, 0.0f));
+
+  // Gate parameters
+  const float thresholdOpenVal = getParamValue(params.thresholdOpen, -45.0f);
+  const float hysteresisVal = getParamValue(params.hysteresis, 6.0f);
+  const float attackVal = getParamValue(params.attack, 1.0f);
+  const float holdVal = getParamValue(params.hold, 40.0f);
+  const float releaseVal = getParamValue(params.release, 100.0f);
+
+  // Gain computer parameters
+  const float floorVal = getParamValue(params.floor, -80.0f);
+  const float ratioVal = getParamValue(params.ratio, 4.0f);
+  const float kneeVal = getParamValue(params.knee, 6.0f);
+  const float curveVal = getParamValue(params.curve, 1.0f);
+  const auto gainModeIdx = static_cast<int>(getParamValue(params.gainMode, 0.0f));
+
+  // Update key source router parameters
+  keySourceRouter.setSource(static_cast<ChugGate::DSP::KeySourceRouter::Source>(
+      static_cast<int>(getParamValue(params.keySource, 0.0f))));
+  keySourceRouter.setExternalBlend(getParamValue(params.externalBlend, 1.0f));
+  keySourceRouter.setFallbackMode(static_cast<ChugGate::DSP::KeySourceRouter::FallbackMode>(
+      static_cast<int>(getParamValue(params.fallbackMode, 0.0f))));
+
+  // Update key conditioner parameters
+  keyConditioner.setHighPassEnabled(getParamValue(params.hpfEnabled, 1.0f) > 0.5f);
+  keyConditioner.setHighPassFrequency(getParamValue(params.hpfFrequency, 70.0f));
+  keyConditioner.setHighPassSlope(static_cast<ChugGate::DSP::FilterSlope>(
+      static_cast<int>(getParamValue(params.hpfSlope, 0.0f))));
+
+  keyConditioner.setLowPassEnabled(getParamValue(params.lpfEnabled, 0.0f) > 0.5f);
+  keyConditioner.setLowPassFrequency(getParamValue(params.lpfFrequency, 12000.0f));
+  keyConditioner.setLowPassSlope(static_cast<ChugGate::DSP::FilterSlope>(
+      static_cast<int>(getParamValue(params.lpfSlope, 0.0f))));
+
+  const float emphasisFreq = getParamValue(params.emphasisFreq, 1200.0f);
+  const float emphasisGain = getParamValue(params.emphasisGain, 0.0f);
+  const float emphasisQ = getParamValue(params.emphasisQ, 1.0f);
+  keyConditioner.setEmphasisEnabled(emphasisGain != 0.0f);
+  keyConditioner.setEmphasisFrequency(emphasisFreq);
+  keyConditioner.setEmphasisQ(emphasisQ);
+  keyConditioner.setEmphasisGain(emphasisGain);
+
+  if (listenModeVal > 0) {
+      keyConditioner.setListenMode(static_cast<ChugGate::DSP::KeyConditioner::ListenMode>(listenModeVal - 1));
+  }
+
+  // Update powerline shield parameters
+  powerlineShield.setHumMode(static_cast<ChugGate::DSP::PowerlineShield::HumMode>(
+      static_cast<int>(getParamValue(params.humMode, 0.0f))));
+  powerlineShield.setHarmonics(static_cast<int>(getParamValue(params.humHarmonics, 0.0f)) + 1);
+  powerlineShield.setNotchQ(getParamValue(params.humNotchQ, 20.0f));
+  powerlineShield.setHumImmunityAmount(getParamValue(params.humImmunityAmount, 0.5f));
+
+  // Update gate state machine and gain parameters
+  stateMachine.setThresholdOpen(thresholdOpenVal);
+  stateMachine.setHysteresis(hysteresisVal);
+  stateMachine.setAttack(attackVal);
+  stateMachine.setHold(holdVal);
+  stateMachine.setRelease(releaseVal);
+
+  auto gainMode = ChugGate::DSP::GainComputer::Mode::HardGate;
+  if (gainModeIdx == 1) {
+      gainMode = ChugGate::DSP::GainComputer::Mode::SoftGate;
+  } else if (gainModeIdx == 2) {
+      gainMode = ChugGate::DSP::GainComputer::Mode::DownwardExpander;
+  }
+  gainComputer.setMode(gainMode);
+
+  gainSmoother.setOpenTimeMs(0, attackVal);
+  gainSmoother.setCloseTimeMs(0, releaseVal);
+
+  // Extract main channels and sidechain channels safely
+  auto mainInputBuffer = getBusBuffer(buffer, true, 0);
+  auto mainChannels = mainInputBuffer.getArrayOfReadPointers();
+  auto numMainChannels = mainInputBuffer.getNumChannels();
+
+  const float* const* sidechainChannels = nullptr;
+  int numSidechainChannels = 0;
+  juce::AudioBuffer<float> sidechainInputBuffer;
+  if (getBusCount(true) > 1) {
+    auto* sidechainBus = getBus(true, 1);
+    if (sidechainBus->isEnabled()) {
+      sidechainInputBuffer = getBusBuffer(buffer, true, 1);
+      sidechainChannels = sidechainInputBuffer.getArrayOfReadPointers();
+      numSidechainChannels = sidechainInputBuffer.getNumChannels();
+    }
+  }
+
+  float* monoKey = monoKeyBuffer.getWritePointer(0);
+
+  // 1) Route key source to monoKey
+  keySourceRouter.process(mainChannels, numMainChannels,
+                          sidechainChannels, numSidechainChannels,
+                          monoKey, numSamples);
+
+  // If Raw Key Audition is active, copy monoKey to output now
+  if (enabled && !bypassed && listenModeVal == 1) {
+      for (int channel = 0; channel < numMainChannels; ++channel) {
+          if (float* channelData = buffer.getWritePointer(channel)) {
+              std::copy(monoKey, monoKey + numSamples, channelData);
+          }
+      }
+  }
+
+  // 2) Condition the key
+  keyConditioner.process(monoKey, numSamples);
+
+  // 3) Apply Powerline Shield
+  powerlineShield.process(monoKey, numSamples);
+
+  // If Conditioned Key Audition (or later stages fallback) is active, copy monoKey to output now
+  if (enabled && !bypassed && listenModeVal > 1) {
+      for (int channel = 0; channel < numMainChannels; ++channel) {
+          if (float* channelData = buffer.getWritePointer(channel)) {
+              std::copy(monoKey, monoKey + numSamples, channelData);
+          }
+      }
+  }
+
+  // Run the sample-by-sample DSP loop
+  float* smoothedGains = smoothedGainBuffer.getWritePointer(0);
+  for (int i = 0; i < numSamples; ++i) {
+      float keySample = monoKey[i];
+
+      // A) Detector
+      detectorEngine.processSample(keySample);
+      float L = detectorEngine.getLevelDb();
+
+      // B) State machine
+      auto stateOutput = stateMachine.processSample(L);
+
+      // C) Gain computer
+      GainComputer::Input gainInput;
+      gainInput.detectorLevelDb = L;
+      gainInput.thresholdDb = thresholdOpenVal;
+      gainInput.ratio = ratioVal;
+      gainInput.floorDb = floorVal;
+      gainInput.gamma = curveVal;
+      gainInput.softKneeDb = kneeVal;
+      gainInput.openCertainty = stateOutput.openCertainty;
+      gainInput.stateHintIsOpen = ChugGate::DSP::PerformanceStateMachine::isOpenFamily(stateOutput.state);
+      gainInput.hasStateHint = true;
+
+      float targetGain = gainComputer.processSample(gainInput);
+
+      // D) Gain smoother
+      float smoothedGain = gainSmoother.processSample(targetGain, 0);
+
+      smoothedGains[i] = smoothedGain;
+
+      // Update real-time state for UI/timeline with the last sample of the block
+      if (i == numSamples - 1) {
+          realTimeState.currentState.store(static_cast<int>(stateOutput.state));
+          realTimeState.lastGain.store(smoothedGain);
+      }
+  }
+
+  // 5) Apply smoothed broadband gain and trim to main output channels (in-place)
+  if (enabled && !bypassed && listenModeVal == 0) {
+      for (int channel = 0; channel < numMainChannels; ++channel) {
+          if (float* channelData = buffer.getWritePointer(channel)) {
+              for (int i = 0; i < numSamples; ++i) {
+                  channelData[i] *= smoothedGains[i] * trimLinear;
+              }
+          }
+      }
+  } else if (!enabled || bypassed) {
+      // If bypassed/disabled, we don't apply the gain, but we still ran the DSP state tracking.
+      // We don't modify the buffer (it remains dry).
+  }
 }
 
 bool ChugGateAudioProcessor::hasEditor() const { return true; }

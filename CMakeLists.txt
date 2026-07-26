@@ -49,6 +49,9 @@ target_sources(ChugGate
         Source/DSP/KeyConditioner.cpp
         Source/DSP/PowerlineShield.cpp
         Source/DSP/DetectorEngine.cpp
+        Source/DSP/PerformanceStateMachine.cpp
+        Source/DSP/GainComputer.cpp
+        Source/DSP/GainSmoother.cpp
 )
 
 target_compile_definitions(ChugGate
@@ -98,6 +101,30 @@ else()
             Source/DSP/KeyConditioner.cpp
             Source/DSP/PowerlineShield.cpp
             Source/DSP/DetectorEngine.cpp
+    )
+endif()
+
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/StateMachineTests.cpp")
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/tests/StateMachineTests.cpp"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests"
+        COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_BINARY_DIR}/tests/StateMachineTests.cpp"
+        COMMENT "Generating stub StateMachineTests.cpp"
+    )
+    target_sources(ChugGateTests
+        PRIVATE
+            "${CMAKE_CURRENT_BINARY_DIR}/tests/StateMachineTests.cpp"
+            Source/DSP/PerformanceStateMachine.cpp
+            Source/DSP/GainComputer.cpp
+            Source/DSP/GainSmoother.cpp
+    )
+else()
+    target_sources(ChugGateTests
+        PRIVATE
+            tests/StateMachineTests.cpp
+            Source/DSP/PerformanceStateMachine.cpp
+            Source/DSP/GainComputer.cpp
+            Source/DSP/GainSmoother.cpp
     )
 endif()
 
