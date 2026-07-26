@@ -54,3 +54,7 @@ rules.ninja
 .DS_Store
 Thumbs.db
 *~
+
+# SQLite runtime
+*.db-shm
+*.db-wal
