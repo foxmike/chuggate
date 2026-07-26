@@ -44,6 +44,7 @@ target_sources(ChugGate
     PRIVATE
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
+        Source/StateManager.cpp
 )
 
 target_compile_definitions(ChugGate

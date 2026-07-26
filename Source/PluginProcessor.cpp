@@ -1,6 +1,7 @@
 #include "PluginProcessor.h"
 
 #include "ParameterIDs.h"
+#include "StateManager.h"
 
 #if __has_include("PluginEditor.h")
 #include "PluginEditor.h"
@@ -262,7 +263,10 @@ ChugGateAudioProcessor::ChugGateAudioProcessor()
               .withInput("Input", juce::AudioChannelSet::stereo(), true)
               .withInput("Sidechain", juce::AudioChannelSet::stereo(), false)
               .withOutput("Output", juce::AudioChannelSet::stereo(), true)),
-      apvts(*this, nullptr, stateTreeType, ChugGate::createParameterLayout()) {}
+      apvts(*this, nullptr, stateTreeType, ChugGate::createParameterLayout())
+{
+    stateManager = std::make_unique<ChugGate::StateManager>(*this);
+}
 
 void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
                                            int samplesPerBlock) {
@@ -338,12 +342,12 @@ void ChugGateAudioProcessor::changeProgramName(int index,
 }
 
 void ChugGateAudioProcessor::getStateInformation(juce::MemoryBlock &destData) {
-  auto state = apvts.copyState();
-  state.setProperty(schemaVersionProperty,
-                    ChugGate::ParameterIDs::schemaVersion, nullptr);
-
-  if (const auto xml = state.createXml())
-    copyXmlToBinary(*xml, destData);
+  if (stateManager != nullptr)
+  {
+    auto state = stateManager->createFullState();
+    if (const auto xml = state.createXml())
+      copyXmlToBinary(*xml, destData);
+  }
 }
 
 void ChugGateAudioProcessor::setStateInformation(const void *data,
@@ -354,15 +358,10 @@ void ChugGateAudioProcessor::setStateInformation(const void *data,
     return;
 
   auto state = juce::ValueTree::fromXml(*xml);
-
-  if (!state.isValid() || !state.hasType(apvts.state.getType()))
-    return;
-
-  if (!state.hasProperty(schemaVersionProperty))
-    state.setProperty(schemaVersionProperty,
-                      ChugGate::ParameterIDs::schemaVersion, nullptr);
-
-  apvts.replaceState(state);
+  if (stateManager != nullptr)
+  {
+    stateManager->loadFullState(state);
+  }
 }
 
 juce::AudioProcessor *JUCE_CALLTYPE createPluginFilter() {

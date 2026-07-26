@@ -6,6 +6,7 @@ class ChugGateAudioProcessorEditor;
 
 namespace ChugGate {
 juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+class StateManager;
 }
 
 class ChugGateAudioProcessor : public juce::AudioProcessor {
@@ -42,8 +43,22 @@ public:
     return apvts;
   }
 
+  struct RealTimeState {
+    std::atomic<float> noiseBroadbandFloor{-80.0f};
+    std::atomic<float> noiseLowBandFloor{-80.0f};
+    std::atomic<float> noiseMidBandFloor{-80.0f};
+    std::atomic<float> noiseHighBandFloor{-80.0f};
+    std::atomic<double> alignmentOffset{0.0};
+  };
+
+  RealTimeState realTimeState;
+
+  ChugGate::StateManager* getStateManager() noexcept { return stateManager.get(); }
+
 private:
   juce::AudioProcessorValueTreeState apvts;
+  std::unique_ptr<ChugGate::StateManager> stateManager;
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChugGateAudioProcessor)
 };
+
