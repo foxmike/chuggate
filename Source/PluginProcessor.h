@@ -2,6 +2,8 @@
 
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "DSP/KeySourceRouter.h"
+#include "Profiles.h"
+#include "TuningProfiles.h"
 #include "DSP/KeyConditioner.h"
 #include "DSP/PowerlineShield.h"
 #include "DSP/DetectorEngine.h"
@@ -38,10 +40,11 @@ class StateManager;
 }
 
 class ChugGateAudioProcessor : public juce::AudioProcessor,
-                                  private juce::Timer {
+                                  private juce::Timer,
+                                  private juce::AudioProcessorValueTreeState::Listener {
 public:
   ChugGateAudioProcessor();
-  ~ChugGateAudioProcessor() override = default;
+  ~ChugGateAudioProcessor() override;
 
   void prepareToPlay(double sampleRate, int samplesPerBlock) override;
   void releaseResources() override;
@@ -158,7 +161,33 @@ public:
   bool processOfflineAlignment() noexcept { return alignmentAnalyzer.processOfflineAnalysis(); }
   bool finishAlignmentCalibration() noexcept { return alignmentAnalyzer.finishCalibrationChunk(); }
 
+  // Phase J - factory preset JSON loading (CHUGGATE_SPEC.md §24).
+  // These methods bypass the JSON-vs-XML impedance mismatch in the
+  // existing StateManager which only knows XML. The processor reads the
+  // JSON file directly from `Resources/Presets/`, parses the
+  // `parameters` map, and applies each value through APVTS. Special
+  // handling: `profile.index` triggers Profiles::applyProfileDefaults
+  // and `tuning.index` triggers TuningProfiles::applyTuningAdjustments
+  // so the JSON preset path stays consistent with the message-thread
+  // listener wiring below. Returns true on success.
+  bool loadFactoryPresetFromJson(const juce::String& presetName);
+  juce::StringArray getFactoryPresetsJson() const;
+  static juce::File getFactoryPresetDir();
+  // = true iff the current APVTS state has been mutated since the
+  // last preset / profile / tuning load. Used by the editor for a
+  // dirty-state indicator next to the preset name.
+  bool isStateDirty() const noexcept { return stateDirty_.load(std::memory_order_relaxed); }
+  void clearStateDirty() noexcept { stateDirty_.store(false, std::memory_order_relaxed); }
+
 private:
+  // Message-thread APVTS listener for profile.index / tuning.index
+  // (j.1) and the abState / bypass hooks used by the audio-thread
+  // crossfade logic. Runs on the message thread; the only state it
+  // touches is the APVTS itself (which is message-thread) plus the
+  // `isApplyingProfile_` / `isApplyingPreset_` flags that suppress
+  // re-entrant notifications while defaults are written.
+  void parameterChanged(const juce::String& parameterID,
+                        float newValue) override;
   float getParamValue(const std::atomic<float>* paramPtr, float defaultValue = 0.0f) const noexcept;
 
   juce::AudioProcessorValueTreeState apvts;
@@ -350,6 +379,43 @@ private:
   ChugGate::Analysis::AlignmentScopeData alignmentScopeData;
   ChugGate::Analysis::AttackIntegrityAnalyzer attackIntegrityAnalyzer;
   ChugGate::Analysis::TailIntegrityAnalyzer tailIntegrityAnalyzer;
+
+  // Phase J - profile / tuning integration (j.1). When the
+  // profile.index or tuning.index APVTS choice changes, the parameter
+  // listener (message thread) calls Profiles::applyProfileDefaults and
+  // TuningProfiles::applyTuningAdjustments. The flags below suppress
+  // re-entrant notifications while the apply is in progress.
+  bool isApplyingProfile_ = false;
+  bool isApplyingPreset_ = false;
+
+  // Dirty-state flag surfaced to the editor for the preset label.
+  // Set by the parameter listener whenever any tracked parameter
+  // changes after a preset / profile / tuning load; cleared by the
+  // editor once the user re-loads a preset or explicitly acknowledges.
+  std::atomic<bool> stateDirty_{false};
+
+  // Phase J - A/B crossfade (CHUGGATE_SPEC.md §22.1). The audio thread
+  // tracks the last-seen abState value and, on a change, smooths a
+  // gain envelope across the output buffer so the switch is click-free
+  // even when the new slot's parameters would otherwise produce a
+  // discontinuous gain curve. The tracking variables are touched only
+  // from processBlock (audio thread) after the initial sample-rate
+  // driven durations are computed in prepareToPlay.
+  int previousAbState_ = 0;
+  bool isABCrossfade_ = false;
+  int abCrossfadeProgress_ = 0;
+  int abCrossfadeDuration_ = 0;
+
+  // Phase J - bypass crossfade (CHUGGATE_SPEC.md §22.2). The bypass
+  // path is dry (already latency-aligned by the lookahead + skew delay
+  // applied at the top of processBlock); the wet path is the processed
+  // buffer. A short equal-power crossfade blends the two whenever
+  // `global.bypass` toggles. The audio thread owns all of these members.
+  bool previousBypass_ = false;
+  bool isBypassCrossfade_ = false;
+  bool bypassFadeIn_ = false; // true = fading wet -> dry
+  int bypassCrossfadeProgress_ = 0;
+  int bypassCrossfadeDuration_ = 0;
 
   // Quality mode shared by every phase-H analysis unit. Atomic so the
   // audio thread can early-out before building an AnalysisFrame and so

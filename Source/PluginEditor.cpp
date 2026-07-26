@@ -111,6 +111,59 @@ ChugGateAudioProcessorEditor::ChugGateAudioProcessorEditor (ChugGateAudioProcess
     });
 
     //--------------------------------------------------------------------------
+    // Phase J - factory preset JSON loader (CHUGGATE_SPEC.md §24).
+    //
+    // The MainHeader's preset browser already loads XML presets via
+    // StateManager. JSON factory presets (the categorised assets
+    // authored in j.3) are loaded directly through the processor's
+    // `loadFactoryPresetFromJson` because the existing XML path does
+    // not understand JSON. We construct a small auxiliary browser
+    // here so the editor surfaces every factory preset regardless of
+    // format. The combo is populated lazily on the first refresh so
+    // the constructor does not block on filesystem I/O.
+    //--------------------------------------------------------------------------
+    jsonPresetCombo_ = std::make_unique<juce::ComboBox> ("jsonPresetCombo");
+    jsonPresetCombo_->setComponentID ("jsonPresetCombo");
+    jsonPresetCombo_->setTooltip ("Factory preset (JSON) — load on click");
+    addAndMakeVisible (*jsonPresetCombo_);
+
+    jsonPresetLoadButton_ = std::make_unique<juce::TextButton> ("Load Preset");
+    jsonPresetLoadButton_->setComponentID ("jsonPresetLoadButton");
+    jsonPresetLoadButton_->setTooltip ("Apply the selected JSON factory preset");
+    jsonPresetLoadButton_->onClick = [this]
+    {
+        const int id = jsonPresetCombo_->getSelectedId();
+        if (id <= 0) return;
+        const juce::String name = jsonPresetCombo_->getItemText (id - 1);
+        if (name.isNotEmpty())
+            audioProcessor.loadFactoryPresetFromJson (name);
+    };
+    addAndMakeVisible (*jsonPresetLoadButton_);
+
+    rebuildJsonPresetList();
+
+    //--------------------------------------------------------------------------
+    // Phase J - rejected-signal audition indicator. The Diagnose page
+    // surfaces the rejected-mode / state-filter combos, but the user
+    // also needs to know that the output is audition / bypass-of-wet
+    // when auditioning (CHUGGATE_SPEC.md §20.5). A single read-only
+    // label inside the editor suffices; the message-thread timer
+    // refreshes it from the APVTS every tick.
+    //--------------------------------------------------------------------------
+    auditionIndicatorLabel_ = std::make_unique<juce::Label> ("", "Audition: off");
+    auditionIndicatorLabel_->setComponentID ("auditionIndicatorLabel");
+    auditionIndicatorLabel_->setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (*auditionIndicatorLabel_);
+
+    // Dirty-state indicator next to the preset browser. Re-uses
+    // processor.isStateDirty() which is set by the parameter listener
+    // whenever a profile / tuning / preset-bridge parameter changes.
+    dirtyStateLabel_ = std::make_unique<juce::Label> ("", "");
+    dirtyStateLabel_->setComponentID ("dirtyStateLabel");
+    dirtyStateLabel_->setJustificationType (juce::Justification::centredLeft);
+    addAndMakeVisible (*dirtyStateLabel_);
+
+    //--------------------------------------------------------------------------
     // TabbedComponent — five tabs, one per spec §21.4 view. The tab bar
     // is rendered by ChugLookAndFeel's TabbedButtonBar overrides.
     //--------------------------------------------------------------------------
@@ -159,6 +212,93 @@ ChugGateAudioProcessorEditor::~ChugGateAudioProcessorEditor()
     // order does not leave a dangling pointer in the JUCE L&F chain.
     setLookAndFeel (nullptr);
     juce::LookAndFeel::setDefaultLookAndFeel (nullptr);
+}
+
+//==============================================================================
+// Phase J - rebuild the JSON factory preset combo. Called from the
+// constructor and from refreshNow() so the list is current even if the
+// host moved the executable to a non-standard location. The combo IDs
+// are 1-based because JUCE combo IDs are stable references, not array
+// indices. Empty directories leave a single "(no presets)" placeholder.
+//==============================================================================
+void ChugGateAudioProcessorEditor::rebuildJsonPresetList() noexcept
+{
+    if (jsonPresetCombo_ == nullptr) return;
+
+    jsonPresetCombo_->clear();
+
+    const auto names = audioProcessor.getFactoryPresetsJson();
+    if (names.size() > 0)
+    {
+        int id = 1;
+        jsonPresetCombo_->addSectionHeading ("Factory (JSON)");
+        for (const auto& name : names)
+            jsonPresetCombo_->addItem (name, id++);
+        jsonPresetCombo_->setSelectedId (1, juce::dontSendNotification);
+    }
+    else
+    {
+        jsonPresetCombo_->addItem ("(no JSON presets found)", 1);
+        jsonPresetCombo_->setSelectedId (1, juce::dontSendNotification);
+    }
+}
+
+//==============================================================================
+// Phase J - refresh the audition indicator and dirty-state label from
+// the APVTS. Called from timerCallback() at 30 Hz. The audition
+// indicator maps the rejected-mode / state-filter parameters to a
+// short human-readable label so the user knows the output is
+// audition / bypass-of-wet when auditioning (CHUGGATE_SPEC.md §20.5).
+// The dirty indicator is a single "*" character that turns on when
+// isStateDirty() returns true.
+//==============================================================================
+void ChugGateAudioProcessorEditor::refreshStatusLabels() noexcept
+{
+    if (auditionIndicatorLabel_ != nullptr)
+    {
+        const auto& apvts = audioProcessor.getAPVTS();
+        const int rejectedMode = static_cast<int> (std::lround (
+            apvts.getRawParameterValue (
+                ChugGate::ParameterIDs::Audition::rejectedMode) != nullptr
+            ? apvts.getRawParameterValue (
+                ChugGate::ParameterIDs::Audition::rejectedMode)->load()
+            : 0.0f));
+
+        if (rejectedMode == 0)
+        {
+            auditionIndicatorLabel_->setText ("Audition: off",
+                                             juce::dontSendNotification);
+        }
+        else
+        {
+            const char* label = "All";
+            switch (rejectedMode)
+            {
+                case 1: label = "All rejected";   break;
+                case 2: label = "Full band";      break;
+                case 3: label = "Weight band";    break;
+                case 4: label = "Voice band";     break;
+                case 5: label = "Hiss band";      break;
+                case 6: label = "Hiss curtain";   break;
+                case 7: label = "Noise model";    break;
+                case 8: label = "Detector key";   break;
+                default: label = "Unknown";       break;
+            }
+            auditionIndicatorLabel_->setText ("Audition: " + juce::String (label) +
+                                             " (rejected signal — output is bypass-of-wet)",
+                                             juce::dontSendNotification);
+        }
+    }
+
+    if (dirtyStateLabel_ != nullptr)
+    {
+        if (audioProcessor.isStateDirty())
+            dirtyStateLabel_->setText ("State: dirty*",
+                                      juce::dontSendNotification);
+        else
+            dirtyStateLabel_->setText ("State: clean",
+                                      juce::dontSendNotification);
+    }
 }
 
 //==============================================================================
@@ -226,6 +366,9 @@ void ChugGateAudioProcessorEditor::timerCallback()
     // fields and APVTS. The push is non-blocking (setStateSnapshot
     // copies by value and calls repaint()).
     stateIndicator_->setStateSnapshot (buildStateSnapshot());
+
+    // Refresh the status labels (audition indicator + dirty state).
+    refreshStatusLabels();
 
     // Header status labels (latency, CPU, sidechain) refresh inside the
     // header's own timer; nothing to do here.

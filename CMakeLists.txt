@@ -45,6 +45,8 @@ target_sources(ChugGate
         Source/PluginProcessor.cpp
         Source/PluginEditor.cpp
         Source/StateManager.cpp
+        Source/Profiles.cpp
+        Source/TuningProfiles.cpp
         Source/DSP/KeySourceRouter.cpp
         Source/DSP/KeyConditioner.cpp
         Source/DSP/PowerlineShield.cpp

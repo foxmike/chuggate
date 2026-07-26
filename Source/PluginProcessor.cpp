@@ -3,6 +3,9 @@
 #include "ParameterIDs.h"
 #include "StateManager.h"
 
+#include "Profiles.h"
+#include "TuningProfiles.h"
+
 #if __has_include("PluginEditor.h")
 #include "PluginEditor.h"
 #define CHUGGATE_HAS_CUSTOM_EDITOR 1
@@ -388,6 +391,33 @@ ChugGateAudioProcessor::ChugGateAudioProcessor()
     params.bandHigh.solo = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandHigh.solo);
     params.bandHigh.mute = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandHigh.mute);
     params.bandHigh.detectorWeighting = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandHigh.detectorWeighting);
+
+    // Phase J - register APVTS listeners for profile/tuning integration
+    // (j.1) and the audio-thread crossfade triggers (j.2). The
+    // listener is owned by the processor; removal happens in the
+    // destructor below. Registration is intentionally placed after the
+    // parameter pointer table is populated so the listener never has
+    // to dereference a null pointer.
+    apvts.addParameterListener(ChugGate::ParameterIDs::profileIndex, this);
+    apvts.addParameterListener(ChugGate::ParameterIDs::tuningIndex, this);
+    apvts.addParameterListener(ChugGate::ParameterIDs::abState, this);
+    apvts.addParameterListener(ChugGate::ParameterIDs::Global::bypass, this);
+}
+
+ChugGateAudioProcessor::~ChugGateAudioProcessor()
+{
+    // Stop the analysis drainer before tearing down listeners so a
+    // late timer tick cannot observe partially-unregistered state.
+    stopTimer();
+
+    // Remove APVTS listeners (matches the addParameterListener calls in
+    // the constructor). The APVTS itself is destroyed after this body
+    // runs; removing listeners explicitly keeps the APVTS internal
+    // listener list clean for any future shared-state usage.
+    apvts.removeParameterListener(ChugGate::ParameterIDs::profileIndex, this);
+    apvts.removeParameterListener(ChugGate::ParameterIDs::tuningIndex, this);
+    apvts.removeParameterListener(ChugGate::ParameterIDs::abState, this);
+    apvts.removeParameterListener(ChugGate::ParameterIDs::Global::bypass, this);
 }
 
 void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
@@ -513,6 +543,20 @@ void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
   activeTopology = std::clamp(static_cast<int>(getParamValue(params.topology, 0.0f)), 0, 3);
   prevTopology = activeTopology;
 
+  // Phase J - initialise A/B and bypass crossfade state. Durations are
+  // constant in milliseconds so the envelope shape (sample count vs.
+  // sample rate) is stable across host sample-rate changes. We do not
+  // reset `previousAbState_` / `previousBypass_` here on purpose: the
+  // audio thread re-syncs them on the first block so a host
+  // sample-rate change doesn't trigger a spurious crossfade.
+  abCrossfadeDuration_ = static_cast<int>(std::round(sampleRate * 0.020)); // 20 ms
+  bypassCrossfadeDuration_ = static_cast<int>(std::round(sampleRate * 0.005)); // 5 ms
+  isABCrossfade_ = false;
+  abCrossfadeProgress_ = 0;
+  isBypassCrossfade_ = false;
+  bypassCrossfadeProgress_ = 0;
+  bypassFadeIn_ = false;
+
   // Initialize main-path delay
   currentLatency = 0;
   setLatencySamples(0);
@@ -629,6 +673,236 @@ float ChugGateAudioProcessor::getParamValue(const std::atomic<float>* paramPtr, 
   return paramPtr != nullptr ? paramPtr->load(std::memory_order_relaxed) : defaultValue;
 }
 
+//==============================================================================
+// Phase J - APVTS parameter listener (message thread).
+//
+// Fires for profile.index, tuning.index, abState, and global.bypass.
+// Profile and tuning changes route through Profiles / TuningProfiles
+// so the dependent defaults are written in the documented order
+// (profile first, then tuning overlay). Re-entrant notifications are
+// suppressed with `isApplyingProfile_` / `isApplyingPreset_` so the
+// apply path does not loop. The abState and bypass branches only mark
+// the processor dirty; the actual fade is consumed on the audio thread
+// in processBlock where the per-sample envelope is applied.
+//==============================================================================
+void ChugGateAudioProcessor::parameterChanged(const juce::String& parameterID,
+                                              float newValue)
+{
+    if (isApplyingProfile_ || isApplyingPreset_)
+        return;
+
+    if (parameterID == ChugGate::ParameterIDs::profileIndex)
+    {
+        const int idx = static_cast<int>(std::lround(newValue));
+        if (idx < 0 || idx >= ChugGate::Profiles::kNumProfiles)
+            return;
+
+        isApplyingProfile_ = true;
+
+        // Documented order: profile defaults first, then overlay the
+        // currently active tuning so the tuning-sensitive subset is
+        // re-narrowed against the freshly-applied profile.
+        ChugGate::Profiles::applyProfileDefaults(idx, apvts);
+
+        if (auto* tuningParam = apvts.getRawParameterValue(ChugGate::ParameterIDs::tuningIndex))
+        {
+            const int tuningIdx = static_cast<int>(std::lround(tuningParam->load()));
+            ChugGate::TuningProfiles::applyTuningAdjustments(tuningIdx, apvts);
+        }
+
+        isApplyingProfile_ = false;
+        stateDirty_.store(true, std::memory_order_relaxed);
+        return;
+    }
+
+    if (parameterID == ChugGate::ParameterIDs::tuningIndex)
+    {
+        const int idx = static_cast<int>(std::lround(newValue));
+        if (idx < 0 || idx >= ChugGate::TuningProfiles::kNumTunings)
+            return;
+
+        isApplyingProfile_ = true;
+        ChugGate::TuningProfiles::applyTuningAdjustments(idx, apvts);
+        isApplyingProfile_ = false;
+        stateDirty_.store(true, std::memory_order_relaxed);
+        return;
+    }
+
+    // abState and bypass are consumed by the audio thread; the listener
+    // only marks the state dirty so the editor can update the
+    // user-state indicator. The audio-thread crossfade in processBlock
+    // tracks the parameter value directly via the atomic pointer so
+    // the listener does not need to schedule the fade.
+    if (parameterID == ChugGate::ParameterIDs::abState ||
+        parameterID == ChugGate::ParameterIDs::Global::bypass)
+    {
+        stateDirty_.store(true, std::memory_order_relaxed);
+        return;
+    }
+}
+
+//==============================================================================
+// Phase J - factory preset JSON loader (message thread).
+//
+// Resources/Presets/*.json are the categorised, gain-conscious factory
+// assets authored in j.3. The existing StateManager only knows XML;
+// this loader is the JSON counterpart and lives on the processor so the
+// editor can dispatch a JSON preset through the same code path that
+// handles user-initiated parameter writes. All allocations are scoped
+// to the call (no persistent buffers); the only persistent state
+// mutation is the APVTS setValueNotifyingHost calls. Listeners are
+// suppressed for the bridge parameters (profile.index / tuning.index)
+// by routing them through Profiles / TuningProfiles; the nested
+// listener flag blocks the parameterChanged callback from re-entering
+// the apply path.
+//==============================================================================
+juce::File ChugGateAudioProcessor::getFactoryPresetDir()
+{
+    // The directory resolution mirrors StateManager::getFactoryPresetDir
+    // so both the XML (user) and JSON (factory) flows end up at the
+    // same workspace. The hard-coded project path is a development
+    // fallback; real installs resolve via the executable-relative
+    // chain (mono bundle / VST3 .vst3 Contents/Resources) and the
+    // user-data directory.
+    auto exeFile = juce::File::getSpecialLocation(juce::File::currentExecutableFile);
+
+    auto dir = exeFile.getParentDirectory().getChildFile("Resources").getChildFile("Presets");
+    if (dir.isDirectory()) return dir;
+
+    dir = exeFile.getParentDirectory().getParentDirectory()
+              .getChildFile("Resources").getChildFile("Presets");
+    if (dir.isDirectory()) return dir;
+
+    dir = exeFile.getParentDirectory().getParentDirectory().getParentDirectory()
+              .getChildFile("Resources").getChildFile("Presets");
+    if (dir.isDirectory()) return dir;
+
+    // Project workspace fallback for development / standalone. This
+    // exact path is present in the workspace checked into the repo.
+    dir = juce::File("/home/mike/dev/mike/music/plugins/chuggate/Resources/Presets");
+    if (dir.isDirectory()) return dir;
+
+    return juce::File::getCurrentWorkingDirectory()
+        .getChildFile("Resources").getChildFile("Presets");
+}
+
+juce::StringArray ChugGateAudioProcessor::getFactoryPresetsJson() const
+{
+    juce::StringArray names;
+    const auto dir = getFactoryPresetDir();
+    if (dir.isDirectory())
+    {
+        juce::Array<juce::File> files;
+        dir.findChildFiles(files, juce::File::findFiles, false, "*.json");
+        for (const auto& file : files)
+            names.add(file.getFileNameWithoutExtension());
+    }
+    return names;
+}
+
+bool ChugGateAudioProcessor::loadFactoryPresetFromJson(const juce::String& presetName)
+{
+    const auto dir = getFactoryPresetDir();
+    const auto file = dir.getChildFile(presetName + ".json");
+    if (!file.existsAsFile())
+        return false;
+
+    // Read the file into a String and parse with juce::JSON. The
+    // resulting var is a DynamicObject; we walk the `parameters`
+    // property and apply each entry to APVTS. No allocation beyond
+    // the temporary strings / arrays inside this scope.
+    const juce::String content = file.loadFileAsString();
+    if (content.isEmpty())
+        return false;
+
+    const auto root = juce::JSON::parse(content);
+    if (!root.isObject())
+        return false;
+
+    auto* rootObj = root.getDynamicObject();
+    if (rootObj == nullptr)
+        return false;
+
+    const auto paramsVar = rootObj->getProperty("parameters");
+    if (!paramsVar.isObject())
+        return false;
+
+    auto* paramsObj = paramsVar.getDynamicObject();
+    if (paramsObj == nullptr)
+        return false;
+
+    // Suppress the dirty flag for the entire preset apply so the
+    // editor's indicator does not flicker on for the bridge parameters
+    // (profile / tuning) that are intentionally written as the first
+    // step of a load.
+    isApplyingPreset_ = true;
+
+    // 1. Profile index first so the dependent defaults on the APVTS
+    //    land before the explicit numeric overrides. The listener
+    //    below is suppressed by `isApplyingProfile_` so the apply
+    //    stays one-shot.
+    const auto profIdxProp = paramsObj->getProperty(ChugGate::ParameterIDs::profileIndex);
+    int appliedProfile = -1;
+    if (profIdxProp.isInt() || profIdxProp.isDouble())
+    {
+        const int idx = static_cast<int>(profIdxProp);
+        if (idx >= 0 && idx < ChugGate::Profiles::kNumProfiles)
+        {
+            isApplyingProfile_ = true;
+            ChugGate::Profiles::applyProfileDefaults(idx, apvts);
+            isApplyingProfile_ = false;
+            appliedProfile = idx;
+        }
+    }
+
+    // 2. Tuning overlay (matches the profile.then-tuning order
+    //    documented in Profiles.h / TuningProfiles.h).
+    const auto tunIdxProp = paramsObj->getProperty(ChugGate::ParameterIDs::tuningIndex);
+    if (tunIdxProp.isInt() || tunIdxProp.isDouble())
+    {
+        const int idx = static_cast<int>(tunIdxProp);
+        if (idx >= 0 && idx < ChugGate::TuningProfiles::kNumTunings)
+        {
+            isApplyingProfile_ = true;
+            ChugGate::TuningProfiles::applyTuningAdjustments(idx, apvts);
+            isApplyingProfile_ = false;
+        }
+    }
+
+    // 3. Numeric / bool overrides. Iterate in declaration order so the
+    //    apply is deterministic. We skip the bridge parameters since
+    //    they were already handled above; writing them again would
+    //    re-enter the apply path with stale defaults.
+    for (const auto& kv : paramsObj->getProperties())
+    {
+        const juce::String id = kv.name.toString();
+        if (id == ChugGate::ParameterIDs::profileIndex ||
+            id == ChugGate::ParameterIDs::tuningIndex)
+            continue;
+
+        const auto& value = kv.value;
+        if (!value.isInt() && !value.isDouble() && !value.isBool())
+            continue;
+
+        const float denormalized = static_cast<float>(value);
+        if (auto* param = apvts.getParameter(id))
+        {
+            const auto& range = param->getNormalisableRange();
+            const float clamped = juce::jlimit(range.start, range.end, denormalized);
+            const float normalized = range.convertTo0to1(clamped);
+            param->setValueNotifyingHost(normalized);
+        }
+    }
+
+    isApplyingPreset_ = false;
+
+    // Preset load clears the dirty indicator: the current state is now
+    // whatever the preset says it is.
+    stateDirty_.store(false, std::memory_order_relaxed);
+    (void) appliedProfile;
+    return true;
+}
+
 void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
                                           juce::MidiBuffer &midiMessages) {
   juce::ScopedNoDenormals noDenormals;
@@ -653,6 +927,43 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   const float trimLinear = juce::Decibels::decibelsToGain(trimDb);
 
   const int listenModeVal = static_cast<int>(getParamValue(params.listenMode, 0.0f));
+
+  // Phase J - detect A/B state and bypass toggles so the audio thread
+  // can schedule a click-safe crossfade. The StateManager already runs
+  // its save/swap dance when abState changes; this block is the
+  // counterpart that consumes the resulting parameter change in the
+  // audio path. The first block after prepareToPlay re-syncs the
+  // previous values without arming a fade so a host sample-rate change
+  // does not produce a spurious transition.
+  const int currentAbState = static_cast<int>(std::lround(getParamValue(params.abState, 0.0f)));
+  if (currentAbState != previousAbState_)
+  {
+      // The first sample-rate change resets the duration but leaves
+      // `previousAbState_` at its last value; treat any difference
+      // detected in the first block as a sync and skip the fade.
+      if (abCrossfadeDuration_ <= 0)
+          previousAbState_ = currentAbState;
+      else
+      {
+          isABCrossfade_ = true;
+          abCrossfadeProgress_ = 0;
+          previousAbState_ = currentAbState;
+      }
+  }
+
+  const bool currentBypass = bypassed;
+  if (currentBypass != previousBypass_)
+  {
+      if (bypassCrossfadeDuration_ <= 0)
+          previousBypass_ = currentBypass;
+      else
+      {
+          isBypassCrossfade_ = true;
+          bypassCrossfadeProgress_ = 0;
+          bypassFadeIn_ = currentBypass; // true = fading wet -> dry
+          previousBypass_ = currentBypass;
+      }
+  }
 
   // Gate parameters
   const float thresholdOpenVal = getParamValue(params.thresholdOpen, -45.0f);
@@ -1203,6 +1514,83 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   } else if (!enabled || bypassed) {
       // If bypassed/disabled, we don't apply the gain, but we still ran the DSP state tracking.
       // We don't modify the buffer (it remains dry).
+  }
+
+  // -------------------------------------------------------------------------
+  // Phase J - apply A/B and bypass crossfade envelopes (click-safe).
+  //
+  // Wet path = what is currently in `buffer` (processed when enabled,
+  // trimmed above, untouched when bypassed so it is the latency-aligned
+  // dry copy we made earlier). The bypass crossfade is a true wet/dry
+  // blend; the A/B crossfade is a dip envelope that prevents an
+  // instantaneous gain jump when the slot's parameters would otherwise
+  // produce a discontinuous target curve. Both crossfades are
+  // per-sample so the audio thread never touches locks or allocations.
+  // -------------------------------------------------------------------------
+  if (isABCrossfade_ || isBypassCrossfade_)
+  {
+      const int dryChannels = dryMainCopyBuffer.getNumChannels();
+      for (int i = 0; i < numSamples; ++i)
+      {
+          // A/B dip envelope: 0.5 - 0.5*cos(2*pi*alpha) is a
+          // raised-cosine that touches 0 at the midpoint and returns
+          // to 1 at the ends, so the output is briefly attenuated
+          // rather than swapped. Built from `previousAbState_` /
+          // `currentAbState` events only — null when idle.
+          float abEnvelope = 1.0f;
+          if (isABCrossfade_)
+          {
+              const float alpha = static_cast<float>(abCrossfadeProgress_) /
+                                  static_cast<float>(abCrossfadeDuration_);
+              const float a = juce::jlimit(alpha, 0.0f, 1.0f);
+              abEnvelope = 0.5f - 0.5f * std::cos(juce::MathConstants<float>::twoPi * a);
+          }
+
+          // Bypass wet/dry blend. When fading into bypass we ramp
+          // wetGain 1->0 and dryGain 0->1; when leaving bypass we
+          // ramp wetGain 0->1 and dryGain 1->0. Both branches use a
+          // linear taper — short enough that the equal-power footnote
+          // from §22.1 is not necessary at 5 ms.
+          float wetGain = 1.0f;
+          float dryGain = 0.0f;
+          if (isBypassCrossfade_)
+          {
+              const float alpha = static_cast<float>(bypassCrossfadeProgress_) /
+                                  static_cast<float>(bypassCrossfadeDuration_);
+              const float a = juce::jlimit(alpha, 0.0f, 1.0f);
+              if (bypassFadeIn_)
+              {
+                  wetGain = 1.0f - a;
+                  dryGain = a;
+              }
+              else
+              {
+                  wetGain = a;
+                  dryGain = 1.0f - a;
+              }
+          }
+
+          for (int c = 0; c < numMainChannels; ++c)
+          {
+              const float wetSample = buffer.getSample(c, i);
+              const float drySample = (c < dryChannels)
+                  ? dryMainCopyBuffer.getSample(c, i)
+                  : wetSample;
+              const float mixed = wetGain * wetSample + dryGain * drySample;
+              buffer.setSample(c, i, abEnvelope * mixed);
+          }
+
+          if (isABCrossfade_)
+          {
+              if (++abCrossfadeProgress_ >= abCrossfadeDuration_)
+                  isABCrossfade_ = false;
+          }
+          if (isBypassCrossfade_)
+          {
+              if (++bypassCrossfadeProgress_ >= bypassCrossfadeDuration_)
+                  isBypassCrossfade_ = false;
+          }
+      }
   }
 
   // Compute monoDry and monoWet downmixes for audition routing

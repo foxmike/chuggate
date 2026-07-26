@@ -110,5 +110,28 @@ private:
     // takes non-owning pointers via addTab.
     std::unique_ptr<juce::TabbedComponent> tabs_;
 
+    // Phase J - factory preset JSON browser. Exists alongside the
+    // MainHeader's XML preset browser so the editor surfaces every
+    // factory preset regardless of format. The combo is read-only;
+    // the Load button routes through the processor's JSON loader.
+    std::unique_ptr<juce::ComboBox>   jsonPresetCombo_;
+    std::unique_ptr<juce::TextButton> jsonPresetLoadButton_;
+
+    // Phase J - status labels. The audition indicator is visible at
+    // all times so the user knows when the output is the rejected-
+    // signal audition (CHUGGATE_SPEC.md §20.5). The dirty indicator
+    // shows when the current state has been mutated since the last
+    // preset / profile / tuning load.
+    std::unique_ptr<juce::Label> auditionIndicatorLabel_;
+    std::unique_ptr<juce::Label> dirtyStateLabel_;
+
+    // Phase J - helper that walks the JSON preset directory and
+    // rebuilds the factory preset combo. Called from the constructor
+    // and from refreshNow(). Message-thread only.
+    void rebuildJsonPresetList() noexcept;
+    // Refresh the audition indicator and dirty-state label from the
+    // APVTS. Message-thread only.
+    void refreshStatusLabels() noexcept;
+
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (ChugGateAudioProcessorEditor)
 };
