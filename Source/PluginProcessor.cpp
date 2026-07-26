@@ -342,6 +342,46 @@ ChugGateAudioProcessor::ChugGateAudioProcessor()
 
     params.alignmentOffset = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::alignmentOffset);
     params.lookahead = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::lookahead);
+
+    // Phase F parameter bindings
+    params.topology = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::topology);
+    params.dualCrossoverFreq = apvts.getRawParameterValue(ChugGate::ParameterIDs::Crossovers::dualFreq);
+    params.triLowCrossoverFreq = apvts.getRawParameterValue(ChugGate::ParameterIDs::Crossovers::triLowFreq);
+    params.triHighCrossoverFreq = apvts.getRawParameterValue(ChugGate::ParameterIDs::Crossovers::triHighFreq);
+
+    params.hissCurtainMinFreq = apvts.getRawParameterValue(ChugGate::ParameterIDs::HissCurtain::minFreq);
+    params.hissCurtainMaxFreq = apvts.getRawParameterValue(ChugGate::ParameterIDs::HissCurtain::maxFreq);
+    params.hissCurtainDepth = apvts.getRawParameterValue(ChugGate::ParameterIDs::HissCurtain::depth);
+
+    // Band Low
+    params.bandLow.floor = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandLow.floor);
+    params.bandLow.thresholdOffset = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandLow.thresholdOffset);
+    params.bandLow.attackOffset = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandLow.attackOffset);
+    params.bandLow.holdOffset = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandLow.holdOffset);
+    params.bandLow.releaseMultiplier = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandLow.releaseMultiplier);
+    params.bandLow.solo = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandLow.solo);
+    params.bandLow.mute = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandLow.mute);
+    params.bandLow.detectorWeighting = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandLow.detectorWeighting);
+
+    // Band Mid
+    params.bandMid.floor = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandMid.floor);
+    params.bandMid.thresholdOffset = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandMid.thresholdOffset);
+    params.bandMid.attackOffset = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandMid.attackOffset);
+    params.bandMid.holdOffset = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandMid.holdOffset);
+    params.bandMid.releaseMultiplier = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandMid.releaseMultiplier);
+    params.bandMid.solo = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandMid.solo);
+    params.bandMid.mute = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandMid.mute);
+    params.bandMid.detectorWeighting = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandMid.detectorWeighting);
+
+    // Band High
+    params.bandHigh.floor = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandHigh.floor);
+    params.bandHigh.thresholdOffset = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandHigh.thresholdOffset);
+    params.bandHigh.attackOffset = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandHigh.attackOffset);
+    params.bandHigh.holdOffset = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandHigh.holdOffset);
+    params.bandHigh.releaseMultiplier = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandHigh.releaseMultiplier);
+    params.bandHigh.solo = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandHigh.solo);
+    params.bandHigh.mute = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandHigh.mute);
+    params.bandHigh.detectorWeighting = apvts.getRawParameterValue(ChugGate::ParameterIDs::bandHigh.detectorWeighting);
 }
 
 void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
@@ -375,6 +415,23 @@ void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
   // size FractionalDelay for extended capacity +/- 100 ms
   fractionalDelay.prepare(sampleRate, ChugGate::DSP::FractionalDelay::maximumExtendedDelayMs);
 
+  // Phase F prepare
+  crossoverSplitter.prepare(sampleRate, samplesPerBlock, numMainChannels);
+  multibandGate.prepare(sampleRate, samplesPerBlock, numMainChannels, 3);
+  hissCurtain.prepare(sampleRate, samplesPerBlock, numMainChannels);
+
+  prevTopologyBuffer.setSize(numMainChannels, samplesPerBlock);
+  bandBuffer0.setSize(numMainChannels, samplesPerBlock);
+  bandBuffer1.setSize(numMainChannels, samplesPerBlock);
+  bandBuffer2.setSize(numMainChannels, samplesPerBlock);
+  detectorLevels.resize(static_cast<size_t>(samplesPerBlock), -100.0f);
+
+  crossfadeDurationSamples = static_cast<int>(std::round(sampleRate * 0.02)); // 20 ms
+  isCrossfading = false;
+  crossfadeProgressSamples = 0;
+  activeTopology = std::clamp(static_cast<int>(getParamValue(params.topology, 0.0f)), 0, 3);
+  prevTopology = activeTopology;
+
   // Initialize main-path delay
   currentLatency = 0;
   setLatencySamples(0);
@@ -401,6 +458,10 @@ void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
   noiseFloorEstimator.reset();
   alignmentAnalyzer.reset();
   fractionalDelay.reset();
+
+  crossoverSplitter.reset();
+  multibandGate.reset();
+  hissCurtain.reset();
 }
 
 void ChugGateAudioProcessor::releaseResources() {
@@ -408,6 +469,11 @@ void ChugGateAudioProcessor::releaseResources() {
   smoothedGainBuffer.setSize(0, 0);
   monoMainBuffer.setSize(0, 0);
   mainDelayBuffers.setSize(0, 0);
+  prevTopologyBuffer.setSize(0, 0);
+  bandBuffer0.setSize(0, 0);
+  bandBuffer1.setSize(0, 0);
+  bandBuffer2.setSize(0, 0);
+  detectorLevels.clear();
 }
 
 void ChugGateAudioProcessor::reset() {
@@ -429,6 +495,12 @@ void ChugGateAudioProcessor::reset() {
   fractionalDelay.reset();
   mainDelayBuffers.clear();
   mainDelayWriteIndex = 0;
+
+  crossoverSplitter.reset();
+  multibandGate.reset();
+  hissCurtain.reset();
+  isCrossfading = false;
+  crossfadeProgressSamples = 0;
 }
 
 float ChugGateAudioProcessor::getParamValue(const std::atomic<float>* paramPtr, float defaultValue) const noexcept {
@@ -730,11 +802,29 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       mainDelayWriteIndex = (mainDelayWriteIndex + numSamples) % maxDelaySamples;
   }
 
+  // Ensure Phase F auxiliary buffers are large enough
+  if (prevTopologyBuffer.getNumSamples() < numSamples || prevTopologyBuffer.getNumChannels() < numMainChannels) {
+    prevTopologyBuffer.setSize(numMainChannels, numSamples, false, true, true);
+  }
+  if (bandBuffer0.getNumSamples() < numSamples || bandBuffer0.getNumChannels() < numMainChannels) {
+    bandBuffer0.setSize(numMainChannels, numSamples, false, true, true);
+  }
+  if (bandBuffer1.getNumSamples() < numSamples || bandBuffer1.getNumChannels() < numMainChannels) {
+    bandBuffer1.setSize(numMainChannels, numSamples, false, true, true);
+  }
+  if (bandBuffer2.getNumSamples() < numSamples || bandBuffer2.getNumChannels() < numMainChannels) {
+    bandBuffer2.setSize(numMainChannels, numSamples, false, true, true);
+  }
+  if (detectorLevels.size() < static_cast<size_t>(numSamples)) {
+    detectorLevels.resize(static_cast<size_t>(numSamples), -100.0f);
+  }
+
   // Run the sample-by-sample DSP loop
   float* smoothedGains = smoothedGainBuffer.getWritePointer(0);
   bool anyTransient = false;
   bool anySustain = false;
   float sumL = 0.0f;
+  float lastActiveRelease = releaseVal;
 
   for (int i = 0; i < numSamples; ++i) {
       float keySample = monoKey[i];
@@ -743,6 +833,7 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       detectorEngine.processSample(keySample);
       float L = detectorEngine.getLevelDb();
       sumL += L;
+      detectorLevels[static_cast<size_t>(i)] = L;
 
       // B) AttackGuard
       auto attackGuardOutput = attackGuard.processSample(keySample, L);
@@ -801,6 +892,7 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       // G) Gain smoother (combine cadence and sustain adaptive release via min)
       float sustainRelease = (stateOutput.adaptiveReleaseMs > 0.0f) ? stateOutput.adaptiveReleaseMs : releaseVal;
       float activeRelease = cadenceTracker.getEffectiveRelease(sustainRelease);
+      lastActiveRelease = activeRelease;
       gainSmoother.setCloseTimeMs(0, activeRelease);
 
       float smoothedGain = gainSmoother.processSample(targetGain, 0);
@@ -834,12 +926,63 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   realTimeState.noiseHighBandFloor.store(noiseFloorEstimator.getBandFloorDb(3));
   realTimeState.alignmentOffset.store(alignmentDelayMs);
 
-  // 5) Apply smoothed broadband gain and trim to main output channels (in-place)
+  // 5) Apply topology selector, crossfade, and trim to main output channels (in-place)
   if (enabled && !bypassed && listenModeVal == 0) {
+      // Check for topology change
+      int targetTopology = static_cast<int>(getParamValue(params.topology, 0.0f));
+      targetTopology = std::clamp(targetTopology, 0, 3);
+      
+      if (targetTopology != activeTopology) {
+          if (!isCrossfading) {
+              prevTopology = activeTopology;
+              isCrossfading = true;
+              crossfadeProgressSamples = 0;
+          } else {
+              prevTopology = activeTopology;
+              crossfadeProgressSamples = 0;
+          }
+          activeTopology = targetTopology;
+      }
+
+      if (isCrossfading) {
+          // Copy delayed main signal to prevTopologyBuffer before processing
+          for (int c = 0; c < numMainChannels; ++c) {
+              prevTopologyBuffer.copyFrom(c, 0, buffer.getReadPointer(c), numSamples);
+          }
+          
+          // Process current topology on buffer
+          processTopology(activeTopology, buffer, smoothedGains, lastActiveRelease, avgL, numSamples);
+          
+          // Process previous topology on prevTopologyBuffer
+          processTopology(prevTopology, prevTopologyBuffer, smoothedGains, lastActiveRelease, avgL, numSamples);
+          
+          // Crossfade blend: buffer = (1-alpha)*prevTopologyBuffer + alpha*buffer
+          int progress = crossfadeProgressSamples;
+          for (int i = 0; i < numSamples; ++i) {
+              float alpha = static_cast<float>(progress) / static_cast<float>(crossfadeDurationSamples);
+              alpha = std::clamp(alpha, 0.0f, 1.0f);
+              progress++;
+              if (progress >= crossfadeDurationSamples) {
+                  isCrossfading = false;
+              }
+              
+              for (int c = 0; c < numMainChannels; ++c) {
+                  float newSample = buffer.getSample(c, i);
+                  float prevSample = prevTopologyBuffer.getSample(c, i);
+                  buffer.setSample(c, i, (1.0f - alpha) * prevSample + alpha * newSample);
+              }
+          }
+          crossfadeProgressSamples = progress;
+      } else {
+          // No crossfade, process current topology directly in-place
+          processTopology(activeTopology, buffer, smoothedGains, lastActiveRelease, avgL, numSamples);
+      }
+
+      // Apply output trim to the final processed signal
       for (int channel = 0; channel < numMainChannels; ++channel) {
           if (float* channelData = buffer.getWritePointer(channel)) {
               for (int i = 0; i < numSamples; ++i) {
-                  channelData[i] *= smoothedGains[i] * trimLinear;
+                  channelData[i] *= trimLinear;
               }
           }
       }
@@ -847,6 +990,148 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       // If bypassed/disabled, we don't apply the gain, but we still ran the DSP state tracking.
       // We don't modify the buffer (it remains dry).
   }
+}
+
+void ChugGateAudioProcessor::processTopology(int topology, juce::AudioBuffer<float>& targetBuffer, const float* smoothedGains, float lastActiveRelease, float avgL, int numSamples)
+{
+    const int numChannels = targetBuffer.getNumChannels();
+    
+    if (topology == 0) // Full Band
+    {
+        // Full Band: bypass splitter; single-band MultibandGate or existing broadband gain path
+        for (int channel = 0; channel < numChannels; ++channel)
+        {
+            if (float* channelData = targetBuffer.getWritePointer(channel))
+            {
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    channelData[i] *= smoothedGains[i];
+                }
+            }
+        }
+    }
+    else if (topology == 1) // Dual Band
+    {
+        // Dual: TwoWay splitter + MultibandGate 2 bands
+        const float dualCrossoverFreqVal = getParamValue(params.dualCrossoverFreq, 4000.0f);
+        
+        crossoverSplitter.setMode(ChugGate::DSP::CrossoverSplitter::Mode::TwoWay);
+        crossoverSplitter.setDualCrossoverFreq(dualCrossoverFreqVal);
+        crossoverSplitter.processBlock(targetBuffer, bandBuffer0, bandBuffer1, bandBuffer2);
+        
+        const float attackVal = getParamValue(params.attack, 1.0f);
+        
+        multibandGate.setNumBands(2);
+        
+        // Band 0 (Low/Body) uses bandLow params
+        multibandGate.setBandFloorDb(0, getParamValue(params.bandLow.floor, -80.0f));
+        multibandGate.setBandOpenTime(0, std::max(0.01f, attackVal + getParamValue(params.bandLow.attackOffset, 0.0f)));
+        multibandGate.setBandCloseTime(0, std::max(2.0f, lastActiveRelease * getParamValue(params.bandLow.releaseMultiplier, 1.0f)));
+        multibandGate.setBandMute(0, getParamValue(params.bandLow.mute, 0.0f) > 0.5f);
+        multibandGate.setBandSolo(0, getParamValue(params.bandLow.solo, 0.0f) > 0.5f);
+        multibandGate.setBandThresholdOffset(0, getParamValue(params.bandLow.thresholdOffset, 0.0f));
+        
+        // Band 1 (High/Hiss) uses bandHigh params
+        multibandGate.setBandFloorDb(1, getParamValue(params.bandHigh.floor, -80.0f));
+        multibandGate.setBandOpenTime(1, std::max(0.01f, attackVal + getParamValue(params.bandHigh.attackOffset, 0.0f)));
+        multibandGate.setBandCloseTime(1, std::max(2.0f, lastActiveRelease * getParamValue(params.bandHigh.releaseMultiplier, 1.0f)));
+        multibandGate.setBandMute(1, getParamValue(params.bandHigh.mute, 0.0f) > 0.5f);
+        multibandGate.setBandSolo(1, getParamValue(params.bandHigh.solo, 0.0f) > 0.5f);
+        multibandGate.setBandThresholdOffset(1, getParamValue(params.bandHigh.thresholdOffset, 0.0f));
+        
+        // Set curve gamma
+        multibandGate.setCurveGamma(getParamValue(params.curve, 1.0f));
+        
+        // Process target gains and recombine
+        multibandGate.processTargets(detectorLevels.data(), getParamValue(params.thresholdOpen, -45.0f), getParamValue(params.hysteresis, 6.0f), numSamples);
+        multibandGate.process(bandBuffer0.getArrayOfReadPointers(),
+                              bandBuffer1.getArrayOfReadPointers(),
+                              nullptr,
+                              targetBuffer.getArrayOfWritePointers(),
+                              numChannels,
+                              numSamples);
+    }
+    else if (topology == 2) // Tri Band
+    {
+        // Tri: ThreeWay splitter + MultibandGate 3 bands
+        const float triLowCrossoverFreqVal = getParamValue(params.triLowCrossoverFreq, 250.0f);
+        const float triHighCrossoverFreqVal = getParamValue(params.triHighCrossoverFreq, 4500.0f);
+        
+        crossoverSplitter.setMode(ChugGate::DSP::CrossoverSplitter::Mode::ThreeWay);
+        crossoverSplitter.setTriCrossoversHz(triLowCrossoverFreqVal, triHighCrossoverFreqVal);
+        crossoverSplitter.processBlock(targetBuffer, bandBuffer0, bandBuffer1, bandBuffer2);
+        
+        const float attackVal = getParamValue(params.attack, 1.0f);
+        
+        multibandGate.setNumBands(3);
+        
+        // Band 0 (Low/Weight) uses bandLow params
+        multibandGate.setBandFloorDb(0, getParamValue(params.bandLow.floor, -80.0f));
+        multibandGate.setBandOpenTime(0, std::max(0.01f, attackVal + getParamValue(params.bandLow.attackOffset, 0.0f)));
+        multibandGate.setBandCloseTime(0, std::max(2.0f, lastActiveRelease * getParamValue(params.bandLow.releaseMultiplier, 1.0f)));
+        multibandGate.setBandMute(0, getParamValue(params.bandLow.mute, 0.0f) > 0.5f);
+        multibandGate.setBandSolo(0, getParamValue(params.bandLow.solo, 0.0f) > 0.5f);
+        multibandGate.setBandThresholdOffset(0, getParamValue(params.bandLow.thresholdOffset, 0.0f));
+        
+        // Band 1 (Mid/Voice) uses bandMid params
+        multibandGate.setBandFloorDb(1, getParamValue(params.bandMid.floor, -80.0f));
+        multibandGate.setBandOpenTime(1, std::max(0.01f, attackVal + getParamValue(params.bandMid.attackOffset, 0.0f)));
+        multibandGate.setBandCloseTime(1, std::max(2.0f, lastActiveRelease * getParamValue(params.bandMid.releaseMultiplier, 1.0f)));
+        multibandGate.setBandMute(1, getParamValue(params.bandMid.mute, 0.0f) > 0.5f);
+        multibandGate.setBandSolo(1, getParamValue(params.bandMid.solo, 0.0f) > 0.5f);
+        multibandGate.setBandThresholdOffset(1, getParamValue(params.bandMid.thresholdOffset, 0.0f));
+
+        // Band 2 (High/Hiss) uses bandHigh params
+        multibandGate.setBandFloorDb(2, getParamValue(params.bandHigh.floor, -80.0f));
+        multibandGate.setBandOpenTime(2, std::max(0.01f, attackVal + getParamValue(params.bandHigh.attackOffset, 0.0f)));
+        multibandGate.setBandCloseTime(2, std::max(2.0f, lastActiveRelease * getParamValue(params.bandHigh.releaseMultiplier, 1.0f)));
+        multibandGate.setBandMute(2, getParamValue(params.bandHigh.mute, 0.0f) > 0.5f);
+        multibandGate.setBandSolo(2, getParamValue(params.bandHigh.solo, 0.0f) > 0.5f);
+        multibandGate.setBandThresholdOffset(2, getParamValue(params.bandHigh.thresholdOffset, 0.0f));
+        
+        // Set curve gamma
+        multibandGate.setCurveGamma(getParamValue(params.curve, 1.0f));
+        
+        // Process target gains and recombine
+        multibandGate.processTargets(detectorLevels.data(), getParamValue(params.thresholdOpen, -45.0f), getParamValue(params.hysteresis, 6.0f), numSamples);
+        multibandGate.process(bandBuffer0.getArrayOfReadPointers(),
+                              bandBuffer1.getArrayOfReadPointers(),
+                              bandBuffer2.getArrayOfReadPointers(),
+                              targetBuffer.getArrayOfWritePointers(),
+                              numChannels,
+                              numSamples);
+    }
+    else if (topology == 3) // Hiss Curtain
+    {
+        // Apply curtain on open/sustaining audio after main gain law:
+        // First apply broadband gain in-place
+        for (int channel = 0; channel < numChannels; ++channel)
+        {
+            if (float* channelData = targetBuffer.getWritePointer(channel))
+            {
+                for (int i = 0; i < numSamples; ++i)
+                {
+                    channelData[i] *= smoothedGains[i];
+                }
+            }
+        }
+        
+        // Configure HissCurtain
+        hissCurtain.setMinFreqHz(getParamValue(params.hissCurtainMinFreq, 2000.0f));
+        hissCurtain.setMaxFreqHz(getParamValue(params.hissCurtainMaxFreq, 10000.0f));
+        hissCurtain.setDepth(getParamValue(params.hissCurtainDepth, 0.75f));
+        
+        // Feed SNR_H: L - noise floor (broadband envelope residual heuristic)
+        float highBandFloor = noiseFloorEstimator.getBandFloorDb(3);
+        if (highBandFloor > 0.0f || highBandFloor < -120.0f) {
+            highBandFloor = noiseFloorEstimator.getBroadbandFloorDb();
+        }
+        float snrH = avgL - highBandFloor;
+        hissCurtain.setSnr(snrH);
+        
+        // Process HissCurtain
+        hissCurtain.processBlock(targetBuffer);
+    }
 }
 
 bool ChugGateAudioProcessor::hasEditor() const { return true; }

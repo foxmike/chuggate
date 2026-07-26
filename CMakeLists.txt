@@ -60,6 +60,9 @@ target_sources(ChugGate
         Source/DSP/NoiseFloorEstimator.cpp
         Source/DSP/AlignmentAnalyzer.cpp
         Source/DSP/FractionalDelay.cpp
+        Source/DSP/CrossoverSplitter.cpp
+        Source/DSP/MultibandGate.cpp
+        Source/DSP/HissCurtain.cpp
 )
 
 target_compile_definitions(ChugGate
@@ -219,6 +222,30 @@ else()
             tests/AlignmentTests.cpp
             Source/DSP/AlignmentAnalyzer.cpp
             Source/DSP/FractionalDelay.cpp
+    )
+endif()
+
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/MultibandGateTests.cpp")
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/tests/MultibandGateTests.cpp"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests"
+        COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_BINARY_DIR}/tests/MultibandGateTests.cpp"
+        COMMENT "Generating stub MultibandGateTests.cpp"
+    )
+    target_sources(ChugGateTests
+        PRIVATE
+            "${CMAKE_CURRENT_BINARY_DIR}/tests/MultibandGateTests.cpp"
+            Source/DSP/CrossoverSplitter.cpp
+            Source/DSP/MultibandGate.cpp
+            Source/DSP/HissCurtain.cpp
+    )
+else()
+    target_sources(ChugGateTests
+        PRIVATE
+            tests/MultibandGateTests.cpp
+            Source/DSP/CrossoverSplitter.cpp
+            Source/DSP/MultibandGate.cpp
+            Source/DSP/HissCurtain.cpp
     )
 endif()
 

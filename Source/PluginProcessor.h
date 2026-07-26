@@ -16,6 +16,9 @@
 #include "DSP/NoiseFloorEstimator.h"
 #include "DSP/AlignmentAnalyzer.h"
 #include "DSP/FractionalDelay.h"
+#include "DSP/CrossoverSplitter.h"
+#include "DSP/MultibandGate.h"
+#include "DSP/HissCurtain.h"
 
 class ChugGateAudioProcessorEditor;
 
@@ -190,6 +193,30 @@ private:
     // Alignment
     std::atomic<float>* alignmentOffset = nullptr;
     std::atomic<float>* lookahead = nullptr;
+
+    // Phase F additions
+    std::atomic<float>* topology = nullptr;
+    std::atomic<float>* dualCrossoverFreq = nullptr;
+    std::atomic<float>* triLowCrossoverFreq = nullptr;
+    std::atomic<float>* triHighCrossoverFreq = nullptr;
+
+    std::atomic<float>* hissCurtainMinFreq = nullptr;
+    std::atomic<float>* hissCurtainMaxFreq = nullptr;
+    std::atomic<float>* hissCurtainDepth = nullptr;
+
+    struct BandPointers {
+      std::atomic<float>* floor = nullptr;
+      std::atomic<float>* thresholdOffset = nullptr;
+      std::atomic<float>* attackOffset = nullptr;
+      std::atomic<float>* holdOffset = nullptr;
+      std::atomic<float>* releaseMultiplier = nullptr;
+      std::atomic<float>* solo = nullptr;
+      std::atomic<float>* mute = nullptr;
+      std::atomic<float>* detectorWeighting = nullptr;
+    };
+    BandPointers bandLow;
+    BandPointers bandMid;
+    BandPointers bandHigh;
   };
   ParameterPointers params;
 
@@ -200,6 +227,25 @@ private:
   juce::AudioBuffer<float> mainDelayBuffers;
   int mainDelayWriteIndex = 0;
   int currentLatency = 0;
+
+  // Phase F components
+  ChugGate::DSP::CrossoverSplitter crossoverSplitter;
+  ChugGate::DSP::MultibandGate multibandGate;
+  ChugGate::DSP::HissCurtain hissCurtain;
+
+  // Phase F state & buffers
+  int activeTopology = 0;
+  int prevTopology = 0;
+  bool isCrossfading = false;
+  int crossfadeProgressSamples = 0;
+  int crossfadeDurationSamples = 0;
+  juce::AudioBuffer<float> prevTopologyBuffer;
+  juce::AudioBuffer<float> bandBuffer0;
+  juce::AudioBuffer<float> bandBuffer1;
+  juce::AudioBuffer<float> bandBuffer2;
+  std::vector<float> detectorLevels;
+
+  void processTopology(int topology, juce::AudioBuffer<float>& targetBuffer, const float* smoothedGains, float lastActiveRelease, float avgL, int numSamples);
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChugGateAudioProcessor)
 };
