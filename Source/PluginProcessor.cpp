@@ -299,6 +299,36 @@ ChugGateAudioProcessor::ChugGateAudioProcessor()
     params.humHarmonics = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::humHarmonics);
     params.humNotchQ = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::humNotchQ);
     params.humImmunityAmount = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::humImmunityAmount);
+    params.maxAdaptiveRelease = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::maxAdaptiveRelease);
+
+    // Attack Guard parameters
+    params.attackGuardEnabled = apvts.getRawParameterValue(ChugGate::ParameterIDs::AttackGuard::enabled);
+    params.attackGuardAmount = apvts.getRawParameterValue(ChugGate::ParameterIDs::AttackGuard::amount);
+    params.attackGuardSensitivity = apvts.getRawParameterValue(ChugGate::ParameterIDs::AttackGuard::sensitivity);
+    params.attackGuardFrequency = apvts.getRawParameterValue(ChugGate::ParameterIDs::AttackGuard::frequency);
+    params.attackGuardDecay = apvts.getRawParameterValue(ChugGate::ParameterIDs::AttackGuard::decay);
+    params.attackGuardSoftNoteAssist = apvts.getRawParameterValue(ChugGate::ParameterIDs::AttackGuard::softNoteAssist);
+    params.attackGuardMaxThresholdReduction = apvts.getRawParameterValue(ChugGate::ParameterIDs::AttackGuard::maxThresholdReduction);
+    params.attackGuardConfirmationWindow = apvts.getRawParameterValue(ChugGate::ParameterIDs::AttackGuard::confirmationWindow);
+
+    // Sustain Analyzer parameters
+    params.sustainEnabled = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::enabled);
+    params.sustainAmount = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::amount);
+    params.sustainReleaseExtension = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::releaseExtension);
+    params.sustainHarmonicWeight = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::harmonicWeight);
+    params.sustainDecayWeight = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::decayWeight);
+    params.sustainNoiseWeight = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::noiseWeight);
+
+    // Feedback Friend parameters
+    params.feedbackEnabled = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::feedbackEnabled);
+    params.feedbackSensitivity = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::feedbackSensitivity);
+    params.feedbackMinDuration = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::feedbackMinDuration);
+    params.feedbackMaxHold = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::feedbackMaxHold);
+    params.feedbackFreqMin = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::feedbackFreqMin);
+    params.feedbackFreqMax = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::feedbackFreqMax);
+    params.feedbackFloor = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::feedbackFloor);
+    params.feedbackRequireExtKey = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::feedbackRequireExtKey);
+    params.feedbackSafetyTimeout = apvts.getRawParameterValue(ChugGate::ParameterIDs::Sustain::feedbackSafetyTimeout);
 }
 
 void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
@@ -318,10 +348,20 @@ void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
   gainComputer.prepare(sampleRate);
   gainSmoother.prepare(sampleRate, 1);
 
+  attackGuard.prepare(sampleRate, samplesPerBlock);
+  fundamentalEstimator.prepare(sampleRate, samplesPerBlock);
+  fundamentalEstimator.setControlHop(static_cast<int>(std::max(1.0, 0.02 * sampleRate)));
+  sustainAnalyzer.prepare(sampleRate, samplesPerBlock);
+  feedbackDetector.prepare(sampleRate, samplesPerBlock);
+
   keySourceRouter.reset();
   keyConditioner.reset();
   powerlineShield.reset();
   detectorEngine.reset();
+  attackGuard.reset();
+  fundamentalEstimator.reset();
+  sustainAnalyzer.reset();
+  feedbackDetector.reset();
   stateMachine.reset();
   gainComputer.reset();
   gainSmoother.reset(1.0f);
@@ -337,6 +377,10 @@ void ChugGateAudioProcessor::reset() {
   keyConditioner.reset();
   powerlineShield.reset();
   detectorEngine.reset();
+  attackGuard.reset();
+  fundamentalEstimator.reset();
+  sustainAnalyzer.reset();
+  feedbackDetector.reset();
   stateMachine.reset();
   gainComputer.reset();
   gainSmoother.reset(1.0f);
@@ -440,6 +484,42 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   gainSmoother.setOpenTimeMs(0, attackVal);
   gainSmoother.setCloseTimeMs(0, releaseVal);
 
+  // Update Attack Guard parameters
+  attackGuard.setEnabled(getParamValue(params.attackGuardEnabled, 1.0f) > 0.5f);
+  attackGuard.setAmount(getParamValue(params.attackGuardAmount, 0.75f));
+  attackGuard.setSensitivity(getParamValue(params.attackGuardSensitivity, 0.5f));
+  attackGuard.setFrequencyEmphasis(getParamValue(params.attackGuardFrequency, 1800.0f));
+  attackGuard.setDecay(getParamValue(params.attackGuardDecay, 40.0f));
+  attackGuard.setSoftNoteAssist(getParamValue(params.attackGuardSoftNoteAssist, 0.5f));
+  attackGuard.setMaxThresholdReduction(getParamValue(params.attackGuardMaxThresholdReduction, 12.0f));
+  attackGuard.setConfirmationWindow(getParamValue(params.attackGuardConfirmationWindow, 5.0f));
+
+  // Update Sustain Analyzer parameters
+  sustainAnalyzer.setEnabled(getParamValue(params.sustainEnabled, 1.0f) > 0.5f);
+  sustainAnalyzer.setBaseRelease(getParamValue(params.release, 100.0f));
+  sustainAnalyzer.setAdaptiveReleaseAmount(getParamValue(params.sustainReleaseExtension, 2.0f));
+  sustainAnalyzer.setWeights(
+      getParamValue(params.sustainHarmonicWeight, 0.5f),
+      getParamValue(params.sustainDecayWeight, 0.3f),
+      0.0f,
+      getParamValue(params.sustainNoiseWeight, 0.5f)
+  );
+  sustainAnalyzer.setSustainThreshold(getParamValue(params.sustainAmount, 0.5f));
+  sustainAnalyzer.setMaximumAdaptiveRelease(getParamValue(params.maxAdaptiveRelease, 2000.0f));
+
+  // Update Feedback Detector parameters
+  feedbackDetector.setEnabled(getParamValue(params.feedbackEnabled, 0.0f) > 0.5f);
+  feedbackDetector.setSensitivity(getParamValue(params.feedbackSensitivity, 0.5f));
+  feedbackDetector.setMinDuration(getParamValue(params.feedbackMinDuration, 500.0f));
+  feedbackDetector.setMaxHold(getParamValue(params.feedbackMaxHold, 5000.0f));
+  feedbackDetector.setFrequencyRange(
+      getParamValue(params.feedbackFreqMin, 80.0f),
+      getParamValue(params.feedbackFreqMax, 4000.0f)
+  );
+  feedbackDetector.setFeedbackFloor(getParamValue(params.feedbackFloor, -12.0f));
+  feedbackDetector.setRequireExternalDI(getParamValue(params.feedbackRequireExtKey, 0.0f) > 0.5f);
+  feedbackDetector.setSafetyTimeout(getParamValue(params.feedbackSafetyTimeout, 10000.0f));
+
   // Extract main channels and sidechain channels safely
   auto mainInputBuffer = getBusBuffer(buffer, true, 0);
   auto mainChannels = mainInputBuffer.getArrayOfReadPointers();
@@ -457,6 +537,7 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
     }
   }
 
+  const bool sidechainActive = (numSidechainChannels > 0);
   float* monoKey = monoKeyBuffer.getWritePointer(0);
 
   // 1) Route key source to monoKey
@@ -497,15 +578,44 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       detectorEngine.processSample(keySample);
       float L = detectorEngine.getLevelDb();
 
-      // B) State machine
-      auto stateOutput = stateMachine.processSample(L);
+      // B) AttackGuard
+      auto attackGuardOutput = attackGuard.processSample(keySample, L);
 
-      // C) Gain computer
-      GainComputer::Input gainInput;
+      // C) FundamentalEstimator
+      fundamentalEstimator.processSample(keySample);
+      auto f0Estimate = fundamentalEstimator.getEstimate();
+
+      // D) SustainAnalyzer + FeedbackDetector
+      auto sustainOutput = sustainAnalyzer.processSample(keySample, L, f0Estimate, 0.0f);
+      auto feedbackOutput = feedbackDetector.processSample(keySample, L, f0Estimate, attackGuardOutput.transientStrength, sidechainActive);
+
+      // E) State machine
+      stateMachine.setAttackAssist(attackGuardOutput.validAttack, attackGuardOutput.thresholdReductionDb);
+      stateMachine.setSustainProtection(sustainOutput.sustainProtection);
+      stateMachine.setFeedbackProtection(feedbackOutput.protectOpen);
+
+      ChugGate::DSP::PerformanceStateMachine::Evidence evidence;
+      evidence.validAttack = attackGuardOutput.validAttack;
+      evidence.thresholdReduction = attackGuardOutput.thresholdReductionDb;
+      evidence.sustainScore = sustainOutput.sustainScore;
+      evidence.sustainProtection = sustainOutput.sustainProtection;
+      evidence.feedbackActive = feedbackOutput.feedbackActive;
+      evidence.feedbackProtection = feedbackOutput.protectOpen;
+      evidence.adaptiveReleaseMs = sustainOutput.adaptiveReleaseMs;
+
+      auto stateOutput = stateMachine.processSample(L, L, evidence);
+
+      // F) Gain computer
+      float activeFloor = floorVal;
+      if (feedbackOutput.feedbackActive) {
+          activeFloor = feedbackOutput.suggestedFloorDb;
+      }
+
+      ChugGate::DSP::GainComputer::Input gainInput;
       gainInput.detectorLevelDb = L;
       gainInput.thresholdDb = thresholdOpenVal;
       gainInput.ratio = ratioVal;
-      gainInput.floorDb = floorVal;
+      gainInput.floorDb = activeFloor;
       gainInput.gamma = curveVal;
       gainInput.softKneeDb = kneeVal;
       gainInput.openCertainty = stateOutput.openCertainty;
@@ -514,7 +624,10 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
 
       float targetGain = gainComputer.processSample(gainInput);
 
-      // D) Gain smoother
+      // G) Gain smoother
+      float activeRelease = (stateOutput.adaptiveReleaseMs > 0.0f) ? stateOutput.adaptiveReleaseMs : releaseVal;
+      gainSmoother.setCloseTimeMs(0, activeRelease);
+
       float smoothedGain = gainSmoother.processSample(targetGain, 0);
 
       smoothedGains[i] = smoothedGain;

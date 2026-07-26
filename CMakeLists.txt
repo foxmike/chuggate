@@ -49,6 +49,10 @@ target_sources(ChugGate
         Source/DSP/KeyConditioner.cpp
         Source/DSP/PowerlineShield.cpp
         Source/DSP/DetectorEngine.cpp
+        Source/DSP/AttackGuard.cpp
+        Source/DSP/FundamentalEstimator.cpp
+        Source/DSP/SustainAnalyzer.cpp
+        Source/DSP/FeedbackDetector.cpp
         Source/DSP/PerformanceStateMachine.cpp
         Source/DSP/GainComputer.cpp
         Source/DSP/GainSmoother.cpp
@@ -125,6 +129,50 @@ else()
             Source/DSP/PerformanceStateMachine.cpp
             Source/DSP/GainComputer.cpp
             Source/DSP/GainSmoother.cpp
+    )
+endif()
+
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/AttackGuardTests.cpp")
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/tests/AttackGuardTests.cpp"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests"
+        COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_BINARY_DIR}/tests/AttackGuardTests.cpp"
+        COMMENT "Generating stub AttackGuardTests.cpp"
+    )
+    target_sources(ChugGateTests
+        PRIVATE
+            "${CMAKE_CURRENT_BINARY_DIR}/tests/AttackGuardTests.cpp"
+            Source/DSP/AttackGuard.cpp
+    )
+else()
+    target_sources(ChugGateTests
+        PRIVATE
+            tests/AttackGuardTests.cpp
+            Source/DSP/AttackGuard.cpp
+    )
+endif()
+
+if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/SustainTests.cpp")
+    add_custom_command(
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/tests/SustainTests.cpp"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_CURRENT_BINARY_DIR}/tests"
+        COMMAND ${CMAKE_COMMAND} -E touch "${CMAKE_CURRENT_BINARY_DIR}/tests/SustainTests.cpp"
+        COMMENT "Generating stub SustainTests.cpp"
+    )
+    target_sources(ChugGateTests
+        PRIVATE
+            "${CMAKE_CURRENT_BINARY_DIR}/tests/SustainTests.cpp"
+            Source/DSP/FundamentalEstimator.cpp
+            Source/DSP/SustainAnalyzer.cpp
+            Source/DSP/FeedbackDetector.cpp
+    )
+else()
+    target_sources(ChugGateTests
+        PRIVATE
+            tests/SustainTests.cpp
+            Source/DSP/FundamentalEstimator.cpp
+            Source/DSP/SustainAnalyzer.cpp
+            Source/DSP/FeedbackDetector.cpp
     )
 endif()
 

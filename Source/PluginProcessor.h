@@ -5,6 +5,10 @@
 #include "DSP/KeyConditioner.h"
 #include "DSP/PowerlineShield.h"
 #include "DSP/DetectorEngine.h"
+#include "DSP/AttackGuard.h"
+#include "DSP/FundamentalEstimator.h"
+#include "DSP/SustainAnalyzer.h"
+#include "DSP/FeedbackDetector.h"
 #include "DSP/PerformanceStateMachine.h"
 #include "DSP/GainComputer.h"
 #include "DSP/GainSmoother.h"
@@ -86,6 +90,10 @@ private:
   ChugGate::DSP::KeyConditioner keyConditioner;
   ChugGate::DSP::PowerlineShield powerlineShield;
   ChugGate::DSP::DetectorEngine detectorEngine;
+  ChugGate::DSP::AttackGuard attackGuard;
+  ChugGate::DSP::FundamentalEstimator fundamentalEstimator;
+  ChugGate::DSP::SustainAnalyzer sustainAnalyzer;
+  ChugGate::DSP::FeedbackDetector feedbackDetector;
   ChugGate::DSP::PerformanceStateMachine stateMachine;
   ChugGate::DSP::GainComputer gainComputer;
   ChugGate::DSP::GainSmoother gainSmoother;
@@ -123,6 +131,34 @@ private:
     std::atomic<float>* humHarmonics = nullptr;
     std::atomic<float>* humNotchQ = nullptr;
     std::atomic<float>* humImmunityAmount = nullptr;
+    std::atomic<float>* maxAdaptiveRelease = nullptr;
+
+    // Attack Guard
+    std::atomic<float>* attackGuardEnabled = nullptr;
+    std::atomic<float>* attackGuardAmount = nullptr;
+    std::atomic<float>* attackGuardSensitivity = nullptr;
+    std::atomic<float>* attackGuardFrequency = nullptr;
+    std::atomic<float>* attackGuardDecay = nullptr;
+    std::atomic<float>* attackGuardSoftNoteAssist = nullptr;
+    std::atomic<float>* attackGuardMaxThresholdReduction = nullptr;
+    std::atomic<float>* attackGuardConfirmationWindow = nullptr;
+
+    // Sustain Analyzer & Feedback Friend
+    std::atomic<float>* sustainEnabled = nullptr;
+    std::atomic<float>* sustainAmount = nullptr;
+    std::atomic<float>* sustainReleaseExtension = nullptr;
+    std::atomic<float>* sustainHarmonicWeight = nullptr;
+    std::atomic<float>* sustainDecayWeight = nullptr;
+    std::atomic<float>* sustainNoiseWeight = nullptr;
+    std::atomic<float>* feedbackEnabled = nullptr;
+    std::atomic<float>* feedbackSensitivity = nullptr;
+    std::atomic<float>* feedbackMinDuration = nullptr;
+    std::atomic<float>* feedbackMaxHold = nullptr;
+    std::atomic<float>* feedbackFreqMin = nullptr;
+    std::atomic<float>* feedbackFreqMax = nullptr;
+    std::atomic<float>* feedbackFloor = nullptr;
+    std::atomic<float>* feedbackRequireExtKey = nullptr;
+    std::atomic<float>* feedbackSafetyTimeout = nullptr;
   };
   ParameterPointers params;
 

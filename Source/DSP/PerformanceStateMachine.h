@@ -65,6 +65,13 @@ public:
     float sustainScore = 0.0f;
     bool sustainProtection = false;
 
+    // Phase D: Attack and Feedback integration
+    bool validAttack = false;
+    float thresholdReduction = 0.0f;
+    bool feedbackActive = false;
+    bool feedbackProtection = false;
+    float adaptiveReleaseMs = 0.0f;
+
     // Allows Primed to request opening before audible audio reaches the gain
     // path. lookaheadSamples is informational until lookahead is wired.
     bool allowLookaheadPreOpen = false;
@@ -94,6 +101,7 @@ public:
     float thresholdOpenDb = -40.0f;
     float thresholdCloseDb = -46.0f;
     std::uint64_t samplesInState = 0;
+    float adaptiveReleaseMs = 0.0f;
     bool shouldOpenEvidence = false;
     bool stateChanged = false;
 
@@ -136,6 +144,13 @@ public:
   [[nodiscard]] const Output &getLastOutput() const noexcept {
     return lastOutput_;
   }
+  [[nodiscard]] float getAdaptiveRelease() const noexcept {
+    return lastOutput_.adaptiveReleaseMs;
+  }
+
+  void setSustainProtection(bool active) noexcept;
+  void setAttackAssist(bool active, float reductionDb = 0.0f) noexcept;
+  void setFeedbackProtection(bool active) noexcept;
 
   [[nodiscard]] Output processSample(float detectorLevelDb) noexcept;
   [[nodiscard]] Output processSample(float detectorLevelDb,
@@ -194,6 +209,11 @@ private:
   std::atomic<float> holdTimeMs_{50.0f};
   std::atomic<float> releaseTimeMs_{100.0f};
   std::atomic<bool> timingDirty_{true};
+
+  std::atomic<bool> attackAssistActive_{false};
+  std::atomic<float> attackAssistReduction_{0.0f};
+  std::atomic<bool> sustainProtectionActive_{false};
+  std::atomic<bool> feedbackProtectionActive_{false};
 };
 
 } // namespace ChugGate::DSP

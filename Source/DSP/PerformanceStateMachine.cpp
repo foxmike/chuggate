@@ -23,6 +23,23 @@ void PerformanceStateMachine::reset() noexcept {
   lastOutput_.reason = TransitionReason::Reset;
   lastOutput_.thresholdOpenDb = getThresholdOpenDb();
   lastOutput_.thresholdCloseDb = getThresholdCloseDb();
+  attackAssistActive_.store(false, std::memory_order_relaxed);
+  attackAssistReduction_.store(0.0f, std::memory_order_relaxed);
+  sustainProtectionActive_.store(false, std::memory_order_relaxed);
+  feedbackProtectionActive_.store(false, std::memory_order_relaxed);
+}
+
+void PerformanceStateMachine::setSustainProtection(bool active) noexcept {
+  sustainProtectionActive_.store(active, std::memory_order_relaxed);
+}
+
+void PerformanceStateMachine::setAttackAssist(bool active, float reductionDb) noexcept {
+  attackAssistActive_.store(active, std::memory_order_relaxed);
+  attackAssistReduction_.store(reductionDb, std::memory_order_relaxed);
+}
+
+void PerformanceStateMachine::setFeedbackProtection(bool active) noexcept {
+  feedbackProtectionActive_.store(active, std::memory_order_relaxed);
 }
 
 void PerformanceStateMachine::setThresholdOpenDb(float thresholdDb) noexcept {
@@ -96,6 +113,20 @@ PerformanceStateMachine::processSample(const Input &rawInput) noexcept {
   updateTimingIfNeeded();
 
   Input input = rawInput;
+
+  if (attackAssistActive_.load(std::memory_order_relaxed)) {
+    input.evidence.validAttack = true;
+    input.evidence.thresholdReduction = std::max(input.evidence.thresholdReduction,
+                                                 attackAssistReduction_.load(std::memory_order_relaxed));
+  }
+  if (sustainProtectionActive_.load(std::memory_order_relaxed)) {
+    input.evidence.sustainProtection = true;
+  }
+  if (feedbackProtectionActive_.load(std::memory_order_relaxed)) {
+    input.evidence.feedbackProtection = true;
+    input.evidence.feedbackActive = true;
+  }
+
   input.openScoreDb =
       finiteOr(input.openScoreDb, -std::numeric_limits<float>::max());
   input.sustainScoreDb =
@@ -106,20 +137,28 @@ PerformanceStateMachine::processSample(const Input &rawInput) noexcept {
       std::max(0, input.evidence.lookaheadSamples);
 
   const float thresholdOpen = getThresholdOpenDb();
+  const float thresholdReduction = std::clamp(input.evidence.thresholdReduction, 0.0f, 36.0f);
+  const float effectiveThresholdOpen = thresholdOpen - thresholdReduction;
+
   // Section 7.2: derive T_close on every update. It is never an independent
   // persisted or runtime parameter.
   const float thresholdClose = thresholdOpen - getHysteresisDb();
-  const bool aboveOpen = input.openScoreDb >= thresholdOpen;
+  const bool aboveOpen = input.openScoreDb >= effectiveThresholdOpen;
   const bool aboveClose = input.sustainScoreDb > thresholdClose;
   const bool sustainProtected = input.evidence.sustainProtection;
   const bool validTransient = input.evidence.validTransient;
   const State previousState = state_;
 
+  const float activeReleaseMs = input.evidence.adaptiveReleaseMs > 0.0f
+                                ? input.evidence.adaptiveReleaseMs
+                                : releaseTimeMs_.load(std::memory_order_relaxed);
+  const std::uint64_t activeReleaseSamples = millisecondsToSamples(activeReleaseMs);
+
   switch (state_) {
   case State::Closed:
     if (aboveOpen) {
       transitionTo(State::Attack, TransitionReason::ThresholdReached);
-    } else if (validTransient) {
+    } else if (validTransient || input.evidence.validAttack) {
       transitionTo(State::Attack, TransitionReason::TransientValidated);
     } else if (input.evidence.onset) {
       transitionTo(State::Primed, TransitionReason::OnsetEvidence);
@@ -129,7 +168,7 @@ PerformanceStateMachine::processSample(const Input &rawInput) noexcept {
   case State::Primed:
     if (aboveOpen) {
       transitionTo(State::Attack, TransitionReason::ThresholdReached);
-    } else if (validTransient) {
+    } else if (validTransient || input.evidence.validAttack) {
       transitionTo(State::Attack, TransitionReason::TransientValidated);
     } else if (!input.evidence.onset) {
       transitionTo(State::Closed, TransitionReason::PrimingCancelled);
@@ -143,11 +182,11 @@ PerformanceStateMachine::processSample(const Input &rawInput) noexcept {
     break;
 
   case State::Open:
-    if (validTransient) {
+    if (validTransient || input.evidence.validAttack) {
       transitionTo(State::Attack, TransitionReason::TransientValidated);
     } else if (!aboveOpen && holdSamples_ > 0) {
       transitionTo(State::Hold, TransitionReason::BelowOpenThreshold);
-    } else if (!aboveClose && sustainProtected) {
+    } else if (!aboveClose && (sustainProtected || input.evidence.feedbackProtection || input.evidence.feedbackActive)) {
       transitionTo(State::Sustain, TransitionReason::SustainProtection);
     } else if (!aboveClose) {
       transitionTo(State::Release, TransitionReason::HoldExpired);
@@ -155,14 +194,14 @@ PerformanceStateMachine::processSample(const Input &rawInput) noexcept {
     break;
 
   case State::Hold:
-    if (validTransient || aboveOpen) {
-      transitionTo(State::Attack, validTransient
+    if (validTransient || input.evidence.validAttack || aboveOpen) {
+      transitionTo(State::Attack, (validTransient || input.evidence.validAttack)
                                       ? TransitionReason::TransientValidated
                                       : TransitionReason::ThresholdReached);
     } else if (samplesInState_ >= holdSamples_) {
       if (aboveClose) {
         transitionTo(State::Sustain, TransitionReason::HysteresisProtection);
-      } else if (sustainProtected) {
+      } else if (sustainProtected || input.evidence.feedbackProtection || input.evidence.feedbackActive) {
         transitionTo(State::Sustain, TransitionReason::SustainProtection);
       } else {
         transitionTo(State::Release, TransitionReason::HoldExpired);
@@ -171,11 +210,11 @@ PerformanceStateMachine::processSample(const Input &rawInput) noexcept {
     break;
 
   case State::Sustain:
-    if (validTransient) {
+    if (validTransient || input.evidence.validAttack) {
       transitionTo(State::Attack, TransitionReason::TransientValidated);
     } else if (aboveOpen) {
       transitionTo(State::Open, TransitionReason::LevelRecovered);
-    } else if (!aboveClose && !sustainProtected) {
+    } else if (!aboveClose && !sustainProtected && !input.evidence.feedbackProtection && !input.evidence.feedbackActive) {
       transitionTo(State::Release, TransitionReason::SustainEnded);
     }
     break;
@@ -183,16 +222,16 @@ PerformanceStateMachine::processSample(const Input &rawInput) noexcept {
   case State::Release:
     // Reopen is a direction change only. No gain value is owned or reset here;
     // GainComputer/GainSmoother continue from their current gain.
-    if (validTransient) {
+    if (validTransient || input.evidence.validAttack) {
       transitionTo(State::Reopen, TransitionReason::ReopenTransient);
     } else if (aboveOpen) {
       transitionTo(State::Attack, TransitionReason::ThresholdReached);
     } else if (aboveClose) {
       transitionTo(State::Sustain, TransitionReason::HysteresisProtection);
-    } else if (sustainProtected) {
+    } else if (sustainProtected || input.evidence.feedbackProtection || input.evidence.feedbackActive) {
       transitionTo(State::Sustain, TransitionReason::SustainProtection);
     } else if (input.evidence.releaseComplete ||
-               samplesInState_ >= releaseSamples_) {
+               samplesInState_ >= activeReleaseSamples) {
       transitionTo(State::Closed, TransitionReason::ReleaseComplete);
     }
     break;
@@ -204,7 +243,7 @@ PerformanceStateMachine::processSample(const Input &rawInput) noexcept {
     break;
   }
 
-  lastOutput_ = makeOutput(input, previousState, thresholdOpen, thresholdClose);
+  lastOutput_ = makeOutput(input, previousState, effectiveThresholdOpen, thresholdClose);
   if (samplesInState_ != std::numeric_limits<std::uint64_t>::max())
     ++samplesInState_;
   return lastOutput_;
@@ -312,6 +351,7 @@ PerformanceStateMachine::makeOutput(const Input &input, State previousState,
   output.thresholdOpenDb = thresholdOpenDb;
   output.thresholdCloseDb = thresholdCloseDb;
   output.samplesInState = samplesInState_;
+  output.adaptiveReleaseMs = input.evidence.adaptiveReleaseMs;
 
   output.stateChanged = state_ != previousState;
   if (output.stateChanged)
