@@ -420,6 +420,16 @@ ChugGateAudioProcessor::~ChugGateAudioProcessor()
     apvts.removeParameterListener(ChugGate::ParameterIDs::Global::bypass, this);
 }
 
+bool ChugGateAudioProcessor::isBusesLayoutSupported(
+    const BusesLayout &layouts) const {
+  const auto output = layouts.getMainOutputChannelSet();
+  const auto input = layouts.getMainInputChannelSet();
+
+  return output == juce::AudioChannelSet::stereo() &&
+         (input == juce::AudioChannelSet::mono() ||
+          input == juce::AudioChannelSet::stereo());
+}
+
 void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
                                            int samplesPerBlock) {
   const int numMainChannels = getMainBusNumInputChannels();
