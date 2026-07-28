@@ -462,10 +462,13 @@ void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
   keyConditioner.prepare(sampleRate, samplesPerBlock);
   powerlineShield.prepare(sampleRate, samplesPerBlock);
   detectorEngine.prepare(sampleRate, samplesPerBlock);
+  stereoDetectorLeft.prepare(sampleRate, samplesPerBlock);
+  stereoDetectorRight.prepare(sampleRate, samplesPerBlock);
 
   stateMachine.prepare(sampleRate);
   gainComputer.prepare(sampleRate);
-  gainSmoother.prepare(sampleRate, 1);
+  // L, R, and shared linked gain paths.
+  gainSmoother.prepare(sampleRate, 3);
 
   attackGuard.prepare(sampleRate, samplesPerBlock);
   fundamentalEstimator.prepare(sampleRate, samplesPerBlock);
@@ -582,6 +585,8 @@ void ChugGateAudioProcessor::prepareToPlay(double sampleRate,
   keyConditioner.reset();
   powerlineShield.reset();
   detectorEngine.reset();
+  stereoDetectorLeft.reset();
+  stereoDetectorRight.reset();
   attackGuard.reset();
   fundamentalEstimator.reset();
   sustainAnalyzer.reset();
@@ -642,6 +647,8 @@ void ChugGateAudioProcessor::reset() {
   keyConditioner.reset();
   powerlineShield.reset();
   detectorEngine.reset();
+  stereoDetectorLeft.reset();
+  stereoDetectorRight.reset();
   attackGuard.reset();
   fundamentalEstimator.reset();
   sustainAnalyzer.reset();
@@ -1103,6 +1110,32 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   keySourceRouter.setExternalBlend(getParamValue(params.externalBlend, 1.0f));
   keySourceRouter.setFallbackMode(activeFallbackMode);
 
+  // Configure the complete detector-key conditioning path before consuming it.
+  // These setters are lock-free and only rebuild coefficients when values move.
+  const auto hpfSlope = static_cast<ChugGate::DSP::FilterSlope>(
+      std::clamp(static_cast<int>(getParamValue(params.hpfSlope, 0.0f)), 0, 1));
+  const auto lpfSlope = static_cast<ChugGate::DSP::FilterSlope>(
+      std::clamp(static_cast<int>(getParamValue(params.lpfSlope, 0.0f)), 0, 1));
+  keyConditioner.setHpf(getParamValue(params.hpfEnabled, 1.0f) > 0.5f,
+                        getParamValue(params.hpfFrequency, 70.0f), hpfSlope);
+  keyConditioner.setLpf(getParamValue(params.lpfEnabled, 0.0f) > 0.5f,
+                        getParamValue(params.lpfFrequency, 12000.0f), lpfSlope);
+  keyConditioner.setEmphasis(
+      ChugGate::DSP::EmphasisMode::Bell,
+      getParamValue(params.emphasisFreq, 1200.0f),
+      getParamValue(params.emphasisQ, 1.0f),
+      getParamValue(params.emphasisGain, 0.0f));
+
+  const auto humMode = static_cast<ChugGate::DSP::HumMode>(
+      std::clamp(static_cast<int>(getParamValue(params.humMode, 0.0f)), 0, 3));
+  powerlineShield.setHumMode(humMode);
+  powerlineShield.setHarmonics(
+      std::clamp(static_cast<int>(getParamValue(params.humHarmonics, 0.0f)) + 1,
+                 1, 3));
+  powerlineShield.setNotchQ(getParamValue(params.humNotchQ, 20.0f));
+  powerlineShield.setHumImmunityAmount(
+      getParamValue(params.humImmunityAmount, 0.5f));
+
   // 1) Route key source to monoKey
   keySourceRouter.process(mainChannels, numMainChannels,
                           sidechainChannels, numSidechainChannels,
@@ -1147,7 +1180,10 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   cadenceTracker.setConstraintFactor(cadenceReleaseFraction);
 
   noiseFloorEstimator.setSlowAdaptationEnabled(noiseAdaptiveEnabledVal);
-  noiseFloorEstimator.setSlowAdaptationLambda(1.0f - noiseAdaptiveRateVal);
+  // Map the normalized rate over the estimator's complete stable lambda range.
+  // The previous 1-rate mapping clamped every rate >= 0.1 to the same value.
+  noiseFloorEstimator.setSlowAdaptationLambda(
+      0.999999f - 0.099999f * std::clamp(noiseAdaptiveRateVal, 0.0f, 1.0f));
   noiseFloorEstimator.setSnrMarginDb(noiseSnrMarginVal);
 
   // Compute alignment delay (calibration or manual parameter)
@@ -1220,8 +1256,22 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       static_cast<int>(getParamValue(params.linkMode, 0.0f))));
   stereoLinker.setLinkAmount(getParamValue(params.linkAmount, 1.0f));
 
+  // A learned model raises the working threshold to maintain the requested
+  // SNR margin. Slow adaptation then moves this threshold on subsequent blocks.
+  float effectiveThresholdOpenVal = thresholdOpenVal;
+  const auto noiseState = noiseFloorEstimator.getState();
+  const bool hasNoiseModel =
+      noiseState == ChugGate::DSP::NoiseFloorEstimator::LearnState::Ready ||
+      noiseState == ChugGate::DSP::NoiseFloorEstimator::LearnState::Applied ||
+      noiseState == ChugGate::DSP::NoiseFloorEstimator::LearnState::Frozen;
+  if (hasNoiseModel) {
+      effectiveThresholdOpenVal =
+          std::max(thresholdOpenVal,
+                   noiseFloorEstimator.getBroadbandFloorDb() + noiseSnrMarginVal);
+  }
+
   // Update gate state machine and gain parameters
-  stateMachine.setThresholdOpen(thresholdOpenVal);
+  stateMachine.setThresholdOpen(effectiveThresholdOpenVal);
   stateMachine.setHysteresis(hysteresisVal);
   stateMachine.setAttack(attackVal);
   stateMachine.setHold(holdVal);
@@ -1235,8 +1285,10 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   }
   gainComputer.setMode(gainMode);
 
-  gainSmoother.setOpenTimeMs(0, attackVal);
-  gainSmoother.setCloseTimeMs(0, releaseVal);
+  for (int gainPath = 0; gainPath < 3; ++gainPath) {
+      gainSmoother.setOpenTimeMs(gainPath, attackVal);
+      gainSmoother.setCloseTimeMs(gainPath, releaseVal);
+  }
 
   // Update Attack Guard parameters
   attackGuard.setEnabled(getParamValue(params.attackGuardEnabled, 1.0f) > 0.5f);
@@ -1309,12 +1361,45 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       float keySample = monoKey[i];
 
       // A) Detector
-      detectorEngine.processSample(keySample);
+      const float keyMagnitude = std::abs(keySample);
+      float detectorMagnitude = keyMagnitude;
+      if (humMode != ChugGate::DSP::HumMode::Off) {
+          detectorMagnitude = std::sqrt(
+              powerlineShield.estimateMusicalEnergy(keyMagnitude * keyMagnitude));
+      }
+      detectorEngine.processSample(keySample, detectorMagnitude);
       float L = detectorEngine.getLevelDb();
 
-      // Feed to StereoLinker for envelopes (using mono L for both left and right since detector is mono)
-      auto linkedEnv = stereoLinker.linkEnvelopes(L, L);
-      float linkedL = linkedEnv.left;
+      float levelLeft = L;
+      float levelRight = L;
+      const bool canUseStereoKey =
+          numMainChannels > 1 && keySourceIdx != 1 &&
+          keySourceIdx != 3 && keySourceIdx != 4;
+      if (canUseStereoKey) {
+          const float magnitudeLeft =
+              std::abs(dryMainCopyBuffer.getSample(0, i));
+          const float magnitudeRight =
+              std::abs(dryMainCopyBuffer.getSample(1, i));
+          const float meanMagnitude =
+              0.5f * (magnitudeLeft + magnitudeRight);
+          float keyLeft = keySample;
+          float keyRight = keySample;
+          if (meanMagnitude > 1.0e-8f) {
+              keyLeft *= magnitudeLeft / meanMagnitude;
+              keyRight *= magnitudeRight / meanMagnitude;
+          }
+          stereoDetectorLeft.processSample(keyLeft);
+          stereoDetectorRight.processSample(keyRight);
+          levelLeft = stereoDetectorLeft.getLevelDb();
+          levelRight = stereoDetectorRight.getLevelDb();
+      } else if (numMainChannels > 1) {
+          // Keep both side detectors warm and coincident for mono/external keys.
+          stereoDetectorLeft.processSample(keySample, detectorMagnitude);
+          stereoDetectorRight.processSample(keySample, detectorMagnitude);
+      }
+
+      auto linkedEnv = stereoLinker.linkEnvelopes(levelLeft, levelRight);
+      const float linkedL = std::max(linkedEnv.left, linkedEnv.right);
 
       sumL += linkedL;
       detectorLevels[static_cast<size_t>(i)] = linkedL;
@@ -1345,12 +1430,16 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       auto feedbackOutput = feedbackDetector.processSample(keySample, linkedL, f0Estimate, attackGuardOutput.transientStrength, sidechainActive);
 
       // E) State machine
-      stateMachine.setAttackAssist(attackGuardOutput.validAttack, attackGuardOutput.thresholdReductionDb);
+      // Attack Guard is a threshold assistant, not an unconditional open
+      // command. Keeping its validation as onset evidence makes amount and the
+      // maximum-reduction cap continuously audible.
+      stateMachine.setAttackAssist(false, 0.0f);
       stateMachine.setSustainProtection(sustainOutput.sustainProtection);
       stateMachine.setFeedbackProtection(feedbackOutput.protectOpen);
 
       ChugGate::DSP::PerformanceStateMachine::Evidence evidence;
-      evidence.validAttack = attackGuardOutput.validAttack;
+      evidence.validAttack = false;
+      evidence.onset = attackGuardOutput.validAttack;
       evidence.thresholdReduction = attackGuardOutput.thresholdReductionDb;
       evidence.sustainScore = sustainOutput.sustainScore;
       evidence.sustainProtection = sustainOutput.sustainProtection;
@@ -1368,27 +1457,53 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
 
       ChugGate::DSP::GainComputer::Input gainInput;
       gainInput.detectorLevelDb = linkedL;
-      gainInput.thresholdDb = thresholdOpenVal;
+      gainInput.thresholdDb = effectiveThresholdOpenVal;
       gainInput.ratio = ratioVal;
       gainInput.floorDb = activeFloor;
       gainInput.gamma = curveVal;
       gainInput.softKneeDb = kneeVal;
-      gainInput.openCertainty = stateOutput.openCertainty;
+      // The dedicated knee parameter owns SoftGate's transition width. The
+      // state machine certainty is based on hysteresis and would otherwise
+      // replace (and therefore neutralize) it.
+      gainInput.openCertainty =
+          gainMode == ChugGate::DSP::GainComputer::Mode::SoftGate
+              ? -1.0f
+              : stateOutput.openCertainty;
       gainInput.stateHintIsOpen = ChugGate::DSP::PerformanceStateMachine::isOpenFamily(stateOutput.state);
       gainInput.hasStateHint = true;
 
-      float targetGain = gainComputer.processSample(gainInput);
+      const float targetGainLinked = gainComputer.processSample(gainInput);
+
+      auto channelGainInput = gainInput;
+      channelGainInput.hasStateHint = false;
+      channelGainInput.openCertainty = -1.0f;
+      channelGainInput.detectorLevelDb = linkedEnv.left;
+      const float targetGainLeft = gainComputer.processSample(channelGainInput);
+      channelGainInput.detectorLevelDb = linkedEnv.right;
+      const float targetGainRight = gainComputer.processSample(channelGainInput);
 
       // G) Gain smoother (combine cadence and sustain adaptive release via min)
       float sustainRelease = (stateOutput.adaptiveReleaseMs > 0.0f) ? stateOutput.adaptiveReleaseMs : releaseVal;
-      float activeRelease = cadenceTracker.getEffectiveRelease(sustainRelease);
+      const float cadenceConstrainedRelease =
+          cadenceTracker.getEffectiveRelease(sustainRelease);
+      const float activeRelease =
+          sustainRelease +
+          std::clamp(cadenceAmount, 0.0f, 1.0f) *
+              (cadenceConstrainedRelease - sustainRelease);
       lastActiveRelease = activeRelease;
-      gainSmoother.setCloseTimeMs(0, activeRelease);
+      for (int gainPath = 0; gainPath < 3; ++gainPath)
+          gainSmoother.setCloseTimeMs(gainPath, activeRelease);
 
-      float smoothedGain = gainSmoother.processSample(targetGain, 0);
+      const float smoothedGainLeft =
+          gainSmoother.processSample(targetGainLeft, 0);
+      const float smoothedGainRight =
+          gainSmoother.processSample(targetGainRight, 1);
+      const float smoothedGainLinked =
+          gainSmoother.processSample(targetGainLinked, 2);
 
       // Link gains with StereoLinker
-      auto linkedGainPair = stereoLinker.linkGains(smoothedGain, smoothedGain, smoothedGain);
+      auto linkedGainPair = stereoLinker.linkGains(
+          smoothedGainLeft, smoothedGainRight, smoothedGainLinked);
       smoothedGainsL[i] = linkedGainPair.left;
       smoothedGainsR[i] = linkedGainPair.right;
 
@@ -1444,8 +1559,8 @@ void ChugGateAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
           ChugGate::Analysis::AnalysisFrame frame;
           frame.keyEnvelope = lastKeyEnvelopeDb;
           frame.mainEnvelope = avgL;
-          frame.thresholdOpen = thresholdOpenVal;
-          frame.thresholdClose = thresholdOpenVal - hysteresisVal;
+          frame.thresholdOpen = effectiveThresholdOpenVal;
+          frame.thresholdClose = effectiveThresholdOpenVal - hysteresisVal;
           frame.noiseFloor = realTimeState.noiseBroadbandFloor.load();
           frame.gateState = realTimeState.currentState.load();
           frame.outputGain = realTimeState.lastGain.load();
@@ -1782,24 +1897,35 @@ void ChugGateAudioProcessor::processTopology(int topology, juce::AudioBuffer<flo
         // Band 0 (Low/Body) uses bandLow params
         multibandGate.setBandFloorDb(0, getParamValue(params.bandLow.floor, -80.0f));
         multibandGate.setBandOpenTime(0, std::max(0.01f, attackVal + getParamValue(params.bandLow.attackOffset, 0.0f)));
+        multibandGate.setBandHoldTime(0, std::max(0.0f, getParamValue(params.hold, 40.0f) + getParamValue(params.bandLow.holdOffset, 0.0f)));
         multibandGate.setBandCloseTime(0, std::max(2.0f, lastActiveRelease * getParamValue(params.bandLow.releaseMultiplier, 1.0f)));
         multibandGate.setBandMute(0, getParamValue(params.bandLow.mute, 0.0f) > 0.5f);
         multibandGate.setBandSolo(0, getParamValue(params.bandLow.solo, 0.0f) > 0.5f);
         multibandGate.setBandThresholdOffset(0, getParamValue(params.bandLow.thresholdOffset, 0.0f));
+        multibandGate.setBandDetectorWeighting(0, getParamValue(params.bandLow.detectorWeighting, 1.0f));
         
         // Band 1 (High/Hiss) uses bandHigh params
         multibandGate.setBandFloorDb(1, getParamValue(params.bandHigh.floor, -80.0f));
         multibandGate.setBandOpenTime(1, std::max(0.01f, attackVal + getParamValue(params.bandHigh.attackOffset, 0.0f)));
+        multibandGate.setBandHoldTime(1, std::max(0.0f, getParamValue(params.hold, 40.0f) + getParamValue(params.bandHigh.holdOffset, 0.0f)));
         multibandGate.setBandCloseTime(1, std::max(2.0f, lastActiveRelease * getParamValue(params.bandHigh.releaseMultiplier, 1.0f)));
         multibandGate.setBandMute(1, getParamValue(params.bandHigh.mute, 0.0f) > 0.5f);
         multibandGate.setBandSolo(1, getParamValue(params.bandHigh.solo, 0.0f) > 0.5f);
         multibandGate.setBandThresholdOffset(1, getParamValue(params.bandHigh.thresholdOffset, 0.0f));
+        multibandGate.setBandDetectorWeighting(1, getParamValue(params.bandHigh.detectorWeighting, 1.0f));
         
         // Set curve gamma
         multibandGate.setCurveGamma(getParamValue(params.curve, 1.0f));
         
         // Process target gains and recombine
-        multibandGate.processTargets(detectorLevels.data(), getParamValue(params.thresholdOpen, -45.0f), getParamValue(params.hysteresis, 6.0f), numSamples);
+        float multibandThreshold = getParamValue(params.thresholdOpen, -45.0f);
+        if (noiseFloorEstimator.hasSuggestions()) {
+            multibandThreshold =
+                std::max(multibandThreshold,
+                         noiseFloorEstimator.getBroadbandFloorDb() +
+                             getParamValue(params.noiseSnrMargin, 12.0f));
+        }
+        multibandGate.processTargets(detectorLevels.data(), multibandThreshold, getParamValue(params.hysteresis, 6.0f), numSamples);
         multibandGate.process(bandBuffer0.getArrayOfReadPointers(),
                               bandBuffer1.getArrayOfReadPointers(),
                               nullptr,
@@ -1824,32 +1950,45 @@ void ChugGateAudioProcessor::processTopology(int topology, juce::AudioBuffer<flo
         // Band 0 (Low/Weight) uses bandLow params
         multibandGate.setBandFloorDb(0, getParamValue(params.bandLow.floor, -80.0f));
         multibandGate.setBandOpenTime(0, std::max(0.01f, attackVal + getParamValue(params.bandLow.attackOffset, 0.0f)));
+        multibandGate.setBandHoldTime(0, std::max(0.0f, getParamValue(params.hold, 40.0f) + getParamValue(params.bandLow.holdOffset, 0.0f)));
         multibandGate.setBandCloseTime(0, std::max(2.0f, lastActiveRelease * getParamValue(params.bandLow.releaseMultiplier, 1.0f)));
         multibandGate.setBandMute(0, getParamValue(params.bandLow.mute, 0.0f) > 0.5f);
         multibandGate.setBandSolo(0, getParamValue(params.bandLow.solo, 0.0f) > 0.5f);
         multibandGate.setBandThresholdOffset(0, getParamValue(params.bandLow.thresholdOffset, 0.0f));
+        multibandGate.setBandDetectorWeighting(0, getParamValue(params.bandLow.detectorWeighting, 1.0f));
         
         // Band 1 (Mid/Voice) uses bandMid params
         multibandGate.setBandFloorDb(1, getParamValue(params.bandMid.floor, -80.0f));
         multibandGate.setBandOpenTime(1, std::max(0.01f, attackVal + getParamValue(params.bandMid.attackOffset, 0.0f)));
+        multibandGate.setBandHoldTime(1, std::max(0.0f, getParamValue(params.hold, 40.0f) + getParamValue(params.bandMid.holdOffset, 0.0f)));
         multibandGate.setBandCloseTime(1, std::max(2.0f, lastActiveRelease * getParamValue(params.bandMid.releaseMultiplier, 1.0f)));
         multibandGate.setBandMute(1, getParamValue(params.bandMid.mute, 0.0f) > 0.5f);
         multibandGate.setBandSolo(1, getParamValue(params.bandMid.solo, 0.0f) > 0.5f);
         multibandGate.setBandThresholdOffset(1, getParamValue(params.bandMid.thresholdOffset, 0.0f));
+        multibandGate.setBandDetectorWeighting(1, getParamValue(params.bandMid.detectorWeighting, 1.0f));
  
         // Band 2 (High/Hiss) uses bandHigh params
         multibandGate.setBandFloorDb(2, getParamValue(params.bandHigh.floor, -80.0f));
         multibandGate.setBandOpenTime(2, std::max(0.01f, attackVal + getParamValue(params.bandHigh.attackOffset, 0.0f)));
+        multibandGate.setBandHoldTime(2, std::max(0.0f, getParamValue(params.hold, 40.0f) + getParamValue(params.bandHigh.holdOffset, 0.0f)));
         multibandGate.setBandCloseTime(2, std::max(2.0f, lastActiveRelease * getParamValue(params.bandHigh.releaseMultiplier, 1.0f)));
         multibandGate.setBandMute(2, getParamValue(params.bandHigh.mute, 0.0f) > 0.5f);
         multibandGate.setBandSolo(2, getParamValue(params.bandHigh.solo, 0.0f) > 0.5f);
         multibandGate.setBandThresholdOffset(2, getParamValue(params.bandHigh.thresholdOffset, 0.0f));
+        multibandGate.setBandDetectorWeighting(2, getParamValue(params.bandHigh.detectorWeighting, 1.0f));
         
         // Set curve gamma
         multibandGate.setCurveGamma(getParamValue(params.curve, 1.0f));
         
         // Process target gains and recombine
-        multibandGate.processTargets(detectorLevels.data(), getParamValue(params.thresholdOpen, -45.0f), getParamValue(params.hysteresis, 6.0f), numSamples);
+        float multibandThreshold = getParamValue(params.thresholdOpen, -45.0f);
+        if (noiseFloorEstimator.hasSuggestions()) {
+            multibandThreshold =
+                std::max(multibandThreshold,
+                         noiseFloorEstimator.getBroadbandFloorDb() +
+                             getParamValue(params.noiseSnrMargin, 12.0f));
+        }
+        multibandGate.processTargets(detectorLevels.data(), multibandThreshold, getParamValue(params.hysteresis, 6.0f), numSamples);
         multibandGate.process(bandBuffer0.getArrayOfReadPointers(),
                               bandBuffer1.getArrayOfReadPointers(),
                               bandBuffer2.getArrayOfReadPointers(),

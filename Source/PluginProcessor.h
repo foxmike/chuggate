@@ -199,6 +199,8 @@ private:
   ChugGate::DSP::KeyConditioner keyConditioner;
   ChugGate::DSP::PowerlineShield powerlineShield;
   ChugGate::DSP::DetectorEngine detectorEngine;
+  ChugGate::DSP::DetectorEngine stereoDetectorLeft;
+  ChugGate::DSP::DetectorEngine stereoDetectorRight;
   ChugGate::DSP::AttackGuard attackGuard;
   ChugGate::DSP::FundamentalEstimator fundamentalEstimator;
   ChugGate::DSP::SustainAnalyzer sustainAnalyzer;
@@ -446,4 +448,3 @@ private:
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(ChugGateAudioProcessor)
 };
-

@@ -41,7 +41,8 @@ float GainComputer::processSample(const Input &rawInput) const noexcept {
 
   case Mode::DownwardExpander: {
     const float gainDb =
-        downwardExpanderGainDb(levelDb, thresholdDb, rawInput.ratio, floorDb);
+        downwardExpanderGainDb(levelDb, thresholdDb, rawInput.ratio, floorDb,
+                               rawInput.softKneeDb);
     const float unshapedGain = std::pow(10.0f, gainDb * 0.05f);
     if (floorLinear < 1.0f)
       amount = (unshapedGain - floorLinear) / (1.0f - floorLinear);
@@ -90,17 +91,29 @@ float GainComputer::softDecision(float detectorLevelDb, float thresholdDb,
 
 float GainComputer::downwardExpanderGainDb(float detectorLevelDb,
                                            float thresholdDb, float ratio,
-                                           float floorDb) noexcept {
+                                           float floorDb,
+                                           float kneeDb) noexcept {
   const float floor = std::clamp(finiteOr(floorDb, -80.0f), -80.0f, 0.0f);
   const float level = finiteOr(detectorLevelDb, floor);
   const float threshold = finiteOr(thresholdDb, -40.0f);
   const float boundedRatio = std::max(finiteOr(ratio, 2.0f), 1.000001f);
 
-  // Above threshold an expander must remain at unity. Below threshold this is
-  // exactly section 15.3: max(G_floor_dB, (R - 1) * (L - T)).
-  if (level >= threshold)
-    return 0.0f;
-  return std::max(floor, (boundedRatio - 1.0f) * (level - threshold));
+  const float width = std::max(0.0f, finiteOr(kneeDb, 0.0f));
+  const float delta = level - threshold;
+  float gainDb = 0.0f;
+
+  if (width <= 0.0f) {
+    gainDb = delta < 0.0f ? (boundedRatio - 1.0f) * delta : 0.0f;
+  } else if (delta <= -0.5f * width) {
+    gainDb = (boundedRatio - 1.0f) * delta;
+  } else if (delta < 0.5f * width) {
+    // Quadratic transition with matching value and slope at both edges.
+    const float distanceFromUpperEdge = delta - 0.5f * width;
+    gainDb = -(boundedRatio - 1.0f) * distanceFromUpperEdge *
+             distanceFromUpperEdge / (2.0f * width);
+  }
+
+  return std::max(floor, gainDb);
 }
 
 float GainComputer::finiteOr(float value, float fallback) noexcept {

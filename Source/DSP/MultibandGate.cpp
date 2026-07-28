@@ -14,8 +14,12 @@ void MultibandGate::prepare(double sampleRate, int maxBlockSize, int numChannels
 
     // Preallocate states for each channel
     gainChannels_.resize(static_cast<size_t>(numChannels_));
+    holdSamplesRemaining_.resize(static_cast<size_t>(numChannels_));
     for (auto& channelGains : gainChannels_) {
         channelGains.fill(1.0f);
+    }
+    for (auto& channelHolds : holdSamplesRemaining_) {
+        channelHolds.fill(0);
     }
 
     // Preallocate target buffers
@@ -34,6 +38,9 @@ void MultibandGate::prepare(double sampleRate, int maxBlockSize, int numChannels
 void MultibandGate::reset() noexcept {
     for (auto& channelGains : gainChannels_) {
         channelGains.fill(1.0f);
+    }
+    for (auto& channelHolds : holdSamplesRemaining_) {
+        channelHolds.fill(0);
     }
     useSampleWiseTargets_ = false;
     for (int b = 0; b < 3; ++b) {
@@ -71,6 +78,13 @@ void MultibandGate::setBandCloseTime(int band, float closeTimeMs) noexcept {
     }
 }
 
+void MultibandGate::setBandHoldTime(int band, float holdTimeMs) noexcept {
+    if (band >= 0 && band < 3) {
+        holdTimeMs_[static_cast<size_t>(band)] =
+            std::clamp(holdTimeMs, 0.0f, 2000.0f);
+    }
+}
+
 void MultibandGate::setBandMute(int band, bool shouldMute) noexcept {
     if (band >= 0 && band < 3) {
         mute_[static_cast<size_t>(band)] = shouldMute;
@@ -99,6 +113,13 @@ void MultibandGate::setCurveGamma(int band, float gamma) noexcept {
 void MultibandGate::setBandThresholdOffset(int band, float offsetDb) noexcept {
     if (band >= 0 && band < 3) {
         thresholdOffsetDb_[static_cast<size_t>(band)] = offsetDb;
+    }
+}
+
+void MultibandGate::setBandDetectorWeighting(int band, float weighting) noexcept {
+    if (band >= 0 && band < 3) {
+        detectorWeighting_[static_cast<size_t>(band)] =
+            std::clamp(weighting, 0.0f, 1.0f);
     }
 }
 
@@ -137,7 +158,11 @@ void MultibandGate::processTargets(const float* logEnergy, float globalThreshold
 
         auto& buf = targetBuffer_[static_cast<size_t>(b)];
         for (int i = 0; i < limit; ++i) {
-            const float L = logEnergy[i];
+            const float weighting =
+                detectorWeighting_[static_cast<size_t>(b)];
+            const float weightingDb =
+                weighting > 0.0f ? 20.0f * std::log10(weighting) : -160.0f;
+            const float L = logEnergy[i] + weightingDb;
             const float u = std::clamp((L - T_close) / range, 0.0f, 1.0f);
             // Smoothstep curve S(u) = 3u^2 - 2u^3
             const float S = u * u * (3.0f - 2.0f * u);
@@ -183,8 +208,15 @@ void MultibandGate::process(const float* const* band0,
             float sum = 0.0f;
 
             if (b0 != nullptr) {
-                const float target = getTarget(0, i, externalTargets);
+                float target = getTarget(0, i, externalTargets);
                 float current = gainChannels_[static_cast<size_t>(c)][0];
+                auto& hold = holdSamplesRemaining_[static_cast<size_t>(c)][0];
+                if (target >= current) {
+                    hold = static_cast<int>(sampleRate_ * holdTimeMs_[0] * 0.001);
+                } else if (hold > 0) {
+                    --hold;
+                    target = current;
+                }
                 const float alpha = (target > current) ? alphaOpen_[0] : alphaClose_[0];
                 current = alpha * current + (1.0f - alpha) * target;
                 gainChannels_[static_cast<size_t>(c)][0] = current;
@@ -192,8 +224,15 @@ void MultibandGate::process(const float* const* band0,
             }
 
             if (b1 != nullptr) {
-                const float target = getTarget(1, i, externalTargets);
+                float target = getTarget(1, i, externalTargets);
                 float current = gainChannels_[static_cast<size_t>(c)][1];
+                auto& hold = holdSamplesRemaining_[static_cast<size_t>(c)][1];
+                if (target >= current) {
+                    hold = static_cast<int>(sampleRate_ * holdTimeMs_[1] * 0.001);
+                } else if (hold > 0) {
+                    --hold;
+                    target = current;
+                }
                 const float alpha = (target > current) ? alphaOpen_[1] : alphaClose_[1];
                 current = alpha * current + (1.0f - alpha) * target;
                 gainChannels_[static_cast<size_t>(c)][1] = current;
@@ -201,8 +240,15 @@ void MultibandGate::process(const float* const* band0,
             }
 
             if (b2 != nullptr) {
-                const float target = getTarget(2, i, externalTargets);
+                float target = getTarget(2, i, externalTargets);
                 float current = gainChannels_[static_cast<size_t>(c)][2];
+                auto& hold = holdSamplesRemaining_[static_cast<size_t>(c)][2];
+                if (target >= current) {
+                    hold = static_cast<int>(sampleRate_ * holdTimeMs_[2] * 0.001);
+                } else if (hold > 0) {
+                    --hold;
+                    target = current;
+                }
                 const float alpha = (target > current) ? alphaOpen_[2] : alphaClose_[2];
                 current = alpha * current + (1.0f - alpha) * target;
                 gainChannels_[static_cast<size_t>(c)][2] = current;

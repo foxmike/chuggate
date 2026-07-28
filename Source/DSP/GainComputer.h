@@ -64,7 +64,8 @@ public:
   [[nodiscard]] static float downwardExpanderGainDb(float detectorLevelDb,
                                                     float thresholdDb,
                                                     float ratio,
-                                                    float floorDb) noexcept;
+                                                    float floorDb,
+                                                    float kneeDb = 0.0f) noexcept;
 
 private:
   [[nodiscard]] static float finiteOr(float value, float fallback) noexcept;

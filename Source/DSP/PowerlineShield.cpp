@@ -89,16 +89,18 @@ void PowerlineShield::reset() noexcept {
 }
 
 void PowerlineShield::setHumMode(HumMode mode) noexcept {
-  requestedMode_.store(mode, std::memory_order_relaxed);
+  const bool changed =
+      requestedMode_.exchange(mode, std::memory_order_relaxed) != mode;
   if (mode != HumMode::Auto)
     chosenMode_.store(mode, std::memory_order_relaxed);
-  markCoefficientsDirty();
+  if (changed)
+    markCoefficientsDirty();
 }
 
 void PowerlineShield::setHarmonics(int harmonicCount) noexcept {
-  harmonicCount_.store(std::clamp(harmonicCount, 1, 3),
-                       std::memory_order_relaxed);
-  markCoefficientsDirty();
+  const int harmonics = std::clamp(harmonicCount, 1, 3);
+  if (harmonicCount_.exchange(harmonics, std::memory_order_relaxed) != harmonics)
+    markCoefficientsDirty();
 }
 
 void PowerlineShield::setSecondHarmonicEnabled(bool enabled) noexcept {
@@ -112,9 +114,10 @@ void PowerlineShield::setThirdHarmonicEnabled(bool enabled) noexcept {
 }
 
 void PowerlineShield::setNotchQ(float q) noexcept {
-  notchQ_.store(std::clamp(finiteOr(q, 20.0f), 1.0f, 100.0f),
-                std::memory_order_relaxed);
-  markCoefficientsDirty();
+  const float notchQ = std::clamp(finiteOr(q, 20.0f), 1.0f, 100.0f);
+  if (std::abs(notchQ_.exchange(notchQ, std::memory_order_relaxed) - notchQ) >
+      1.0e-7f)
+    markCoefficientsDirty();
 }
 
 void PowerlineShield::setHumImmunityAmount(float eta) noexcept {

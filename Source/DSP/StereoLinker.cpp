@@ -81,10 +81,11 @@ StereoPair StereoLinker::linkEnvelopes(float envL, float envR) noexcept
             return StereoPair{ envL, envR };
     }
 
-    // In linked modes, the L/R detectors are forced to the linked envelope.
-    // Divergence is zero when linked.
-    updateDivergence(0.0f);
-    return StereoPair{ linkedEnv, linkedEnv };
+    const float lambda = linkAmount_.load(std::memory_order_relaxed);
+    const float linkedLeft = lambda * linkedEnv + (1.0f - lambda) * envL;
+    const float linkedRight = lambda * linkedEnv + (1.0f - lambda) * envR;
+    updateDivergence(std::abs(linkedLeft - linkedRight));
+    return StereoPair{ linkedLeft, linkedRight };
 }
 
 StereoPair StereoLinker::linkGains(float gainL, float gainR, float gainLinked) noexcept

@@ -91,22 +91,34 @@ void KeyConditioner::setLowPassSlope(FilterSlope slope) noexcept {
 
 void KeyConditioner::setHpf(bool enabled, float frequencyHz,
                             FilterSlope slope) noexcept {
-  highPassEnabled_.store(enabled, std::memory_order_relaxed);
-  highPassFrequency_.store(std::clamp(finiteOr(frequencyHz, 60.0f), 20.0f,
-                                      250.0f),
-                           std::memory_order_relaxed);
-  highPassSlope_.store(slope, std::memory_order_relaxed);
-  markCoefficientsDirty();
+  const float frequency =
+      std::clamp(finiteOr(frequencyHz, 60.0f), 20.0f, 250.0f);
+  bool changed =
+      highPassEnabled_.exchange(enabled, std::memory_order_relaxed) != enabled;
+  changed |= std::abs(
+                 highPassFrequency_.exchange(frequency,
+                                             std::memory_order_relaxed) -
+                 frequency) >
+             1.0e-7f;
+  changed |= highPassSlope_.exchange(slope, std::memory_order_relaxed) != slope;
+  if (changed)
+    markCoefficientsDirty();
 }
 
 void KeyConditioner::setLpf(bool enabled, float frequencyHz,
                             FilterSlope slope) noexcept {
-  lowPassEnabled_.store(enabled, std::memory_order_relaxed);
-  lowPassFrequency_.store(std::clamp(finiteOr(frequencyHz, 20000.0f), 1500.0f,
-                                     20000.0f),
-                          std::memory_order_relaxed);
-  lowPassSlope_.store(slope, std::memory_order_relaxed);
-  markCoefficientsDirty();
+  const float frequency =
+      std::clamp(finiteOr(frequencyHz, 20000.0f), 1500.0f, 20000.0f);
+  bool changed =
+      lowPassEnabled_.exchange(enabled, std::memory_order_relaxed) != enabled;
+  changed |= std::abs(
+                 lowPassFrequency_.exchange(frequency,
+                                            std::memory_order_relaxed) -
+                 frequency) >
+             1.0e-7f;
+  changed |= lowPassSlope_.exchange(slope, std::memory_order_relaxed) != slope;
+  if (changed)
+    markCoefficientsDirty();
 }
 
 void KeyConditioner::setEmphasisMode(EmphasisMode mode) noexcept {
@@ -139,16 +151,30 @@ void KeyConditioner::setEmphasisGain(float gainDb) noexcept {
 
 void KeyConditioner::setEmphasis(EmphasisMode mode, float frequencyHz, float q,
                                  float gainDb, bool soloKeyPath) noexcept {
-  emphasisMode_.store(mode, std::memory_order_relaxed);
-  emphasisFrequency_.store(
-      std::clamp(finiteOr(frequencyHz, 1000.0f), 20.0f, 20000.0f),
-      std::memory_order_relaxed);
-  emphasisQ_.store(std::clamp(finiteOr(q, butterworthQ), 0.1f, 20.0f),
-                   std::memory_order_relaxed);
-  emphasisGain_.store(std::clamp(finiteOr(gainDb, 0.0f), -24.0f, 24.0f),
-                      std::memory_order_relaxed);
+  const float frequency =
+      std::clamp(finiteOr(frequencyHz, 1000.0f), 20.0f, 20000.0f);
+  const float emphasisQ =
+      std::clamp(finiteOr(q, butterworthQ), 0.1f, 20.0f);
+  const float gain =
+      std::clamp(finiteOr(gainDb, 0.0f), -24.0f, 24.0f);
+  bool changed =
+      emphasisMode_.exchange(mode, std::memory_order_relaxed) != mode;
+  changed |= std::abs(
+                 emphasisFrequency_.exchange(frequency,
+                                             std::memory_order_relaxed) -
+                 frequency) >
+             1.0e-7f;
+  changed |= std::abs(
+                 emphasisQ_.exchange(emphasisQ, std::memory_order_relaxed) -
+                 emphasisQ) >
+             1.0e-7f;
+  changed |= std::abs(
+                 emphasisGain_.exchange(gain, std::memory_order_relaxed) -
+                 gain) >
+             1.0e-7f;
   soloKeyPath_.store(soloKeyPath, std::memory_order_relaxed);
-  markCoefficientsDirty();
+  if (changed)
+    markCoefficientsDirty();
 }
 
 void KeyConditioner::process(float *monoKey, int numSamples) noexcept {

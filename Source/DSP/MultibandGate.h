@@ -70,6 +70,7 @@ public:
      * @brief Sets the close time constant (release time) tau_close_b in milliseconds.
      */
     void setBandCloseTime(int band, float closeTimeMs) noexcept;
+    void setBandHoldTime(int band, float holdTimeMs) noexcept;
 
     /**
      * @brief Sets whether a specific band is muted (forces its target gain to 0.0).
@@ -98,6 +99,7 @@ public:
      * @brief Sets the threshold offset in dB for a band (used in processTargets).
      */
     void setBandThresholdOffset(int band, float offsetDb) noexcept;
+    void setBandDetectorWeighting(int band, float weighting) noexcept;
 
     /**
      * @brief Returns the current smoothed gain for a band (channel 0).
@@ -155,10 +157,12 @@ private:
     std::array<float, 3> floorDb_{0.0f, 0.0f, 0.0f};
     std::array<float, 3> openTimeMs_{5.0f, 5.0f, 5.0f};
     std::array<float, 3> closeTimeMs_{100.0f, 100.0f, 100.0f};
+    std::array<float, 3> holdTimeMs_{0.0f, 0.0f, 0.0f};
     std::array<bool, 3> mute_{false, false, false};
     std::array<bool, 3> solo_{false, false, false};
     std::array<float, 3> gamma_{1.0f, 1.0f, 1.0f};
     std::array<float, 3> thresholdOffsetDb_{0.0f, 0.0f, 0.0f};
+    std::array<float, 3> detectorWeighting_{1.0f, 1.0f, 1.0f};
 
     // Precalculated smoothing coefficients
     std::array<float, 3> alphaOpen_{0.0f, 0.0f, 0.0f};
@@ -166,6 +170,7 @@ private:
 
     // Smoothing states: gainChannels_[channel][band]
     std::vector<std::array<float, 3>> gainChannels_;
+    std::vector<std::array<int, 3>> holdSamplesRemaining_;
 
     // Sample-wise target buffers
     std::vector<float> targetBuffer_[3];

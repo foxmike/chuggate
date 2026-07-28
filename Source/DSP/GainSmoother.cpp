@@ -38,14 +38,22 @@ void GainSmoother::setCloseTimeMs(float timeMs) noexcept {
 void GainSmoother::setOpenTimeMs(int band, float timeMs) noexcept {
   if (band < 0 || band >= maxBands)
     return;
-  openTimeMs_[static_cast<std::size_t>(band)] = sanitiseTime(timeMs);
+  const auto index = static_cast<std::size_t>(band);
+  const float time = sanitiseTime(timeMs);
+  if (std::abs(openTimeMs_[index] - time) <= 1.0e-7f)
+    return;
+  openTimeMs_[index] = time;
   updateAlpha(band);
 }
 
 void GainSmoother::setCloseTimeMs(int band, float timeMs) noexcept {
   if (band < 0 || band >= maxBands)
     return;
-  closeTimeMs_[static_cast<std::size_t>(band)] = sanitiseTime(timeMs);
+  const auto index = static_cast<std::size_t>(band);
+  const float time = sanitiseTime(timeMs);
+  if (std::abs(closeTimeMs_[index] - time) <= 1.0e-7f)
+    return;
+  closeTimeMs_[index] = time;
   updateAlpha(band);
 }
 

@@ -147,6 +147,10 @@ public:
                   "threshold reduction that aids opening");
         runOpenAssistDirection();
 
+        beginTest("Open assist amount scales contribution and maximum reduction "
+                  "is a true cap");
+        runAmountAndMaximumReduction();
+
         beginTest("False-trigger rejection: isolated spike without body energy "
                   "does not set validAttack");
         runFalseTriggerRejection();
@@ -246,6 +250,50 @@ private:
             maxReduction = std::max(maxReduction, o.thresholdReductionDb);
         expect(maxReduction > 1.0f,
                "Sustained assist must produce non-trivial threshold reduction");
+    }
+
+    void runAmountAndMaximumReduction()
+    {
+        const auto mono = makePickBurst(50, 180, 220.0, 0.3f);
+        const auto detector =
+            makeConstantDetector(static_cast<int>(mono.size()), -50.0f);
+
+        const auto maximumReductionFor = [&] (float amount, float maximumDb)
+        {
+            AttackGuard guard;
+            guard.prepare(kSampleRate, kBlockSize);
+            guard.setConfirmationWindowMs(1.0);
+            guard.setEnabled(true);
+            guard.setSensitivity(1.0f);
+            guard.setSoftNoteAssist(1.0f);
+            guard.setAmount(amount);
+            guard.setMaxThresholdReductionDb(maximumDb);
+
+            float maximumReduction = 0.0f;
+            for (const auto &output : runGuard(guard, mono, detector))
+                maximumReduction =
+                    std::max(maximumReduction, output.thresholdReductionDb);
+            return maximumReduction;
+        };
+
+        const float zeroAmount = maximumReductionFor(0.0f, 36.0f);
+        const float quarterAmount = maximumReductionFor(0.25f, 36.0f);
+        const float fullAmount = maximumReductionFor(1.0f, 36.0f);
+        expect(std::fabs(zeroAmount) < kExactTol,
+               "Amount zero must remove the gate-opening contribution");
+        expect(quarterAmount > zeroAmount + 1.0f,
+               "Increasing amount must produce measurable threshold assist");
+        expect(fullAmount > quarterAmount + 1.0f,
+               "Full amount must contribute more assist than quarter amount");
+
+        constexpr float kCapDb = 3.0f;
+        const float capped = maximumReductionFor(1.0f, kCapDb);
+        expect(capped <= kCapDb + kLevelTolDb,
+               "Maximum threshold reduction must clamp the assist");
+        expect(capped >= kCapDb - kLevelTolDb,
+               "Strong attacks must be able to reach the configured cap");
+        expect(fullAmount > capped + 1.0f,
+               "Raising the cap must permit a larger threshold reduction");
     }
 
     // ---- 8.3 False-trigger rejection --------------------------------------

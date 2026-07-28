@@ -9,6 +9,7 @@ namespace {
 
 constexpr float pi = 3.14159265358979323846f;
 constexpr float minimumLevelDb = -100.0f;
+constexpr float maximumAvailableThresholdReductionDb = 36.0f;
 
 } // namespace
 
@@ -133,9 +134,14 @@ AttackGuard::processSample(float rawMonoKey, float rawDetectorLevelDb) noexcept 
         sensitivity_.load(std::memory_order_relaxed);
     const float maximum =
         maxThresholdReductionDb_.load(std::memory_order_relaxed);
-    const float gainDb = maximum * amount * sensitivity;
+    // Amount controls the depth of the guard contribution. The user maximum
+    // is deliberately applied only after that contribution is computed: using
+    // it as the multiplier as well as the clamp made it a second amount
+    // control and prevented it from behaving as a true safety ceiling.
+    const float requestedReductionDb =
+        maximumAvailableThresholdReductionDb * amount * sensitivity * strength;
     result.thresholdReductionDb =
-        std::clamp(gainDb * strength, 0.0f, maximum);
+        std::min(requestedReductionDb, maximum);
     result.openAssistScore = detectorLevelDb + result.thresholdReductionDb;
   }
 
