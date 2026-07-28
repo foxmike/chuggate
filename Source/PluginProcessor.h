@@ -140,7 +140,8 @@ public:
   // Active quality mode (message-thread read). Defaults to Studio when the
   // analyzer is not driven by a parameter yet.
   ChugGate::Analysis::QualityMode getAnalysisQualityMode() const noexcept {
-    return analysisQualityMode_.load(std::memory_order_relaxed);
+    return static_cast<ChugGate::Analysis::QualityMode>(
+        analysisQualityMode_.load(std::memory_order_relaxed));
   }
   // Update quality mode on every owned analysis unit. Message thread.
   void setAnalysisQualityMode(ChugGate::Analysis::QualityMode mode) noexcept;
@@ -214,6 +215,7 @@ private:
   struct ParameterPointers {
     std::atomic<float>* enabled = nullptr;
     std::atomic<float>* bypass = nullptr;
+    std::atomic<float>* abState = nullptr;
     std::atomic<float>* outputTrim = nullptr;
     std::atomic<float>* listenMode = nullptr;
     std::atomic<float>* thresholdOpen = nullptr;

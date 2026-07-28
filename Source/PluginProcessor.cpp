@@ -273,6 +273,7 @@ ChugGateAudioProcessor::ChugGateAudioProcessor()
     // Initialize parameter pointers
     params.enabled = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::enabled);
     params.bypass = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::bypass);
+    params.abState = apvts.getRawParameterValue(ChugGate::ParameterIDs::abState);
     params.outputTrim = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::outputTrim);
     params.listenMode = apvts.getRawParameterValue(ChugGate::ParameterIDs::Key::listenMode);
     params.thresholdOpen = apvts.getRawParameterValue(ChugGate::ParameterIDs::Global::thresholdOpen);

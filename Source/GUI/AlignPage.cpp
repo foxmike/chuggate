@@ -105,7 +105,7 @@ namespace
     juce::String formatConfidence (float v)
     {
         if (std::isnan (v)) return juce::String ("n/a");
-        return juce::String (juce::jlimit (0, 100, v * 100.0f), 0) + juce::String (" %");
+        return juce::String (juce::jlimit (0.0f, 100.0f, v * 100.0f), 0) + juce::String (" %");
     }
 } // namespace
 
