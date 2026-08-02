@@ -14,14 +14,6 @@ ChugGateAudioProcessorEditor::ChugGateAudioProcessorEditor (ChugGateAudioProcess
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
     //--------------------------------------------------------------------------
-    // Resizability and limits per ChugGate specification §21.1.
-    // Default 1280 x 760, freely resizable, minimum 920 x 580.
-    //--------------------------------------------------------------------------
-    setResizable (true, true);
-    setResizeLimits (920, 580, 4096, 2160);
-    setSize (1280, 760);
-
-    //--------------------------------------------------------------------------
     // Install the editor-owned ChugLookAndFeel as the default L&F BEFORE
     // any child components are constructed. setDefaultLookAndFeel is
     // picked up by children created afterwards; setLookAndFeel applies
@@ -124,7 +116,7 @@ ChugGateAudioProcessorEditor::ChugGateAudioProcessorEditor (ChugGateAudioProcess
     //--------------------------------------------------------------------------
     jsonPresetCombo_ = std::make_unique<juce::ComboBox> ("jsonPresetCombo");
     jsonPresetCombo_->setComponentID ("jsonPresetCombo");
-    jsonPresetCombo_->setTooltip ("Factory preset (JSON) — load on click");
+    jsonPresetCombo_->setTooltip ("Factory preset (JSON) -- load on click");
     addAndMakeVisible (*jsonPresetCombo_);
 
     jsonPresetLoadButton_ = std::make_unique<juce::TextButton> ("Load Preset");
@@ -200,6 +192,14 @@ ChugGateAudioProcessorEditor::ChugGateAudioProcessorEditor (ChugGateAudioProcess
     // header's own timer.
     //--------------------------------------------------------------------------
     startTimer (33); // ~30 Hz
+
+    //--------------------------------------------------------------------------
+    // Resizability and limits per ChugGate specification §21.1.
+    // Default 1280 x 760, freely resizable, minimum 920 x 580.
+    //--------------------------------------------------------------------------
+    setResizable (true, true);
+    setResizeLimits (920, 580, 4096, 2160);
+    setSize (1280, 760);
 }
 
 ChugGateAudioProcessorEditor::~ChugGateAudioProcessorEditor()
@@ -285,7 +285,7 @@ void ChugGateAudioProcessorEditor::refreshStatusLabels() noexcept
                 default: label = "Unknown";       break;
             }
             auditionIndicatorLabel_->setText ("Audition: " + juce::String (label) +
-                                             " (rejected signal — output is bypass-of-wet)",
+                                             " (rejected signal -- output is bypass-of-wet)",
                                              juce::dontSendNotification);
         }
     }
@@ -317,7 +317,7 @@ void ChugGateAudioProcessorEditor::resized()
     // Layout per CHUGGATE_SPEC.md §21.3.
     //
     //  ┌──────────────────────────────────────────────────────────────┐
-    //  │ MainHeader (36 px)                                            │
+    //  │ MainHeader (56 px)                                            │
     //  ├──────────────────────────────────────────────────────────────┤
     //  │ PerformanceTimeline          │ StateIndicator                  │
     //  │                              │  (state, duration, gain, ...)   │
@@ -333,7 +333,7 @@ void ChugGateAudioProcessorEditor::resized()
     auto area = getLocalBounds();
 
     // Header
-    header_->setBounds (area.removeFromTop (36));
+    header_->setBounds (area.removeFromTop (56));
 
     // Timeline + state indicator row
     const int timelineRowHeight = juce::jlimit (140, 320, area.getHeight() / 3);
@@ -407,15 +407,15 @@ ChugGate::GUI::StateSnapshot ChugGateAudioProcessorEditor::buildStateSnapshot() 
     const auto stateName = ChugGate::GUI::ChugLookAndFeel::getStateName (gateState);
     switch (gateState)
     {
-        case ChugGate::GUI::GateState::Closed:  snap.reasonText = stateName + " — below threshold"; break;
-        case ChugGate::GUI::GateState::Primed:  snap.reasonText = stateName + " — onset detected";   break;
-        case ChugGate::GUI::GateState::Attack:  snap.reasonText = stateName + " — opening";          break;
-        case ChugGate::GUI::GateState::Open:    snap.reasonText = stateName + " — passing audio";    break;
-        case ChugGate::GUI::GateState::Hold:    snap.reasonText = stateName + " — holding";          break;
-        case ChugGate::GUI::GateState::Sustain: snap.reasonText = stateName + " — harmonic tail";    break;
-        case ChugGate::GUI::GateState::Release: snap.reasonText = stateName + " — closing";          break;
-        case ChugGate::GUI::GateState::Reopen:  snap.reasonText = stateName + " — reopening";        break;
-        case ChugGate::GUI::GateState::Feedback:snap.reasonText = stateName + " — feedback held";    break;
+        case ChugGate::GUI::GateState::Closed:  snap.reasonText = stateName + " -- below threshold"; break;
+        case ChugGate::GUI::GateState::Primed:  snap.reasonText = stateName + " -- onset detected";   break;
+        case ChugGate::GUI::GateState::Attack:  snap.reasonText = stateName + " -- opening";          break;
+        case ChugGate::GUI::GateState::Open:    snap.reasonText = stateName + " -- passing audio";    break;
+        case ChugGate::GUI::GateState::Hold:    snap.reasonText = stateName + " -- holding";          break;
+        case ChugGate::GUI::GateState::Sustain: snap.reasonText = stateName + " -- harmonic tail";    break;
+        case ChugGate::GUI::GateState::Release: snap.reasonText = stateName + " -- closing";          break;
+        case ChugGate::GUI::GateState::Reopen:  snap.reasonText = stateName + " -- reopening";        break;
+        case ChugGate::GUI::GateState::Feedback:snap.reasonText = stateName + " -- feedback held";    break;
     }
 
     // Protection flags — derive from APVTS choices/toggles. We use the

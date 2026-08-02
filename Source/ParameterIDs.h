@@ -54,8 +54,8 @@ inline constexpr auto sensitivity = "attackGuard.sensitivity";
 inline constexpr auto frequency = "attackGuard.frequency";
 inline constexpr auto decay = "attackGuard.decay";
 inline constexpr auto softNoteAssist = "attackGuard.softNoteAssist";
-inline constexpr auto maxThresholdReduction =
-    "attackGuard.maxThresholdReduction";
+inline constexpr auto maxThreshReduction =
+    "attackGuard.maxThreshReduction";
 inline constexpr auto confirmationWindow = "attackGuard.confirmationWindow";
 } // namespace AttackGuard
 

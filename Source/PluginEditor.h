@@ -28,7 +28,7 @@
  *
  *  Hierarchy:
  *      ChugGateAudioProcessorEditor
- *      ├── MainHeader        (top row, height = 36 px; preset, profile,
+ *      ├── MainHeader        (two rows, height = 56 px; preset, profile,
  *      │                      A/B, key source, sidechain, learn/align,
  *      │                      bypass, latency, CPU)
  *      ├── Timeline + State  (PerformanceTimeline on the left, StateIndicator

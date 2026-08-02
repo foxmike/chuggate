@@ -301,7 +301,7 @@ void PerformanceTimeline::paintEmptyState (juce::Graphics& g, juce::Rectangle<in
 {
     g.setColour (ChugLookAndFeel::getMutedTextColour());
     g.setFont (juce::FontOptions (12.0f));
-    g.drawText ("Performance Timeline — no data", bounds,
+    g.drawText ("Performance Timeline -- no data", bounds,
                 juce::Justification::centred, true);
 }
 

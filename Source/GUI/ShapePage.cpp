@@ -32,11 +32,8 @@ namespace
     constexpr int kRowGap              = 6;
     constexpr int kColumnPadding       = 12;
     constexpr int kLabelHeight         = 18;
-
-    // Vertical weights for the three sections.
-    constexpr float kTopologyWeight    = 0.22f;
-    constexpr float kCrossoverWeight   = 0.20f;
-    constexpr float kBandsWeight       = 0.58f;
+    constexpr int kTopologyHeight      = 90;
+    constexpr int kCrossoverHeight     = 90;
 
     // Style a slider for the shape page. Knobs are rotary with a text box
     // below; the LookAndFeel renders the labels via the standard label
@@ -100,16 +97,11 @@ void ShapePage::resized()
 
     area.removeFromTop (16); // title
 
-    const int totalH    = area.getHeight();
-    const int topologyH = std::max (60,  static_cast<int> (totalH * kTopologyWeight));
-    const int xoverH    = std::max (50,  static_cast<int> (totalH * kCrossoverWeight));
-    const int bandsH    = std::max (120, totalH - topologyH - xoverH - kRowGap * 2);
-
-    layoutTopologyRow  (area.removeFromTop (topologyH));
+    layoutTopologyRow  (area.removeFromTop (kTopologyHeight));
     area.removeFromTop (kRowGap);
-    layoutCrossoverRow (area.removeFromTop (xoverH));
+    layoutCrossoverRow (area.removeFromTop (kCrossoverHeight));
     area.removeFromTop (kRowGap);
-    layoutBandPanels   (area.removeFromTop (bandsH));
+    layoutBandPanels   (area);
 }
 
 //==============================================================================
@@ -120,7 +112,7 @@ void ShapePage::layoutTopologyRow (juce::Rectangle<int> area)
     // Left: topology selector. Right: Hiss Curtain sliders.
     if (topologyCombo_ && topologyLabel_)
     {
-        auto left = area.removeFromLeft (area.getWidth() / 3);
+        auto left = area.removeFromLeft (200);
         topologyLabel_->setBounds (left.removeFromTop (kLabelHeight));
         topologyCombo_->setBounds (left);
     }
@@ -177,60 +169,42 @@ void ShapePage::layoutBandPanel (BandControls& b, juce::Rectangle<int> area)
     if (! b.panel) return;
     b.panel->setBounds (area);
 
-    auto inner = area.reduced (kOuterInset);
+    auto inner = b.panel->getLocalBounds().reduced (kOuterInset);
     if (b.title)
-    {
         b.title->setBounds (inner.removeFromTop (kLabelHeight));
-    }
-    inner.removeFromTop (2);
 
-    // Primary row: floor, thresholdOffset, releaseMultiplier.
-    constexpr int numPrimary = 3;
-    const int primaryH = std::min (inner.getHeight() / 2,
-                                  std::max (60, inner.getHeight() * 2 / 3));
-    auto primary = inner.removeFromTop (primaryH);
-    const int priColW = (primary.getWidth() - kColumnPadding * (numPrimary - 1)) / numPrimary;
-    auto placePri = [&] (juce::Slider* s, juce::Label* l, auto& areaIn)
+    auto toggleArea = inner.removeFromBottom (22);
+    auto sliderRows = inner;
+    const int sliderRowHeight = (sliderRows.getHeight() - 4) / 2;
+    auto primary = sliderRows.removeFromTop (sliderRowHeight);
+    sliderRows.removeFromTop (4);
+    auto detail = sliderRows;
+
+    constexpr int numColumns = 3;
+    const int columnWidth = (primary.getWidth() - kColumnPadding * (numColumns - 1)) / numColumns;
+    auto placeSlider = [&] (juce::Slider* s, juce::Label* l, auto& row)
     {
         if (s == nullptr || l == nullptr) return;
-        auto col = areaIn.removeFromLeft (priColW);
-        if (! areaIn.isEmpty()) areaIn.removeFromLeft (kColumnPadding);
+        auto col = row.removeFromLeft (columnWidth);
+        if (! row.isEmpty()) row.removeFromLeft (kColumnPadding);
         l->setBounds (col.removeFromTop (kLabelHeight));
         s->setBounds (col);
     };
-    auto priArea = primary;
-    placePri (b.floorSlider.get(),               b.floorLabel.get(),               priArea);
-    placePri (b.thresholdOffsetSlider.get(),     b.thresholdOffsetLabel.get(),     priArea);
-    placePri (b.releaseMultiplierSlider.get(),   b.releaseMultiplierLabel.get(),   priArea);
 
-    // Detail row: attackOffset, holdOffset, detectorWeighting, solo, mute.
-    inner.removeFromTop (kRowGap);
-    auto detail = inner;
-    const int detailColW = (detail.getWidth() - kColumnPadding * 4) / 5;
-    auto placeDet = [&] (juce::Slider* s, juce::Label* l, auto& areaIn)
-    {
-        if (s == nullptr || l == nullptr) return;
-        auto col = areaIn.removeFromLeft (detailColW);
-        if (! areaIn.isEmpty()) areaIn.removeFromLeft (kColumnPadding);
-        l->setBounds (col.removeFromTop (kLabelHeight));
-        s->setBounds (col);
-    };
-    auto detailArea = detail;
-    placeDet (b.attackOffsetSlider.get(),     b.attackOffsetLabel.get(),     detailArea);
-    placeDet (b.holdOffsetSlider.get(),       b.holdOffsetLabel.get(),       detailArea);
-    placeDet (b.detectorWeightingSlider.get(),b.detectorWeightingLabel.get(),detailArea);
+    placeSlider (b.floorSlider.get(),             b.floorLabel.get(),             primary);
+    placeSlider (b.thresholdOffsetSlider.get(),   b.thresholdOffsetLabel.get(),   primary);
+    placeSlider (b.releaseMultiplierSlider.get(), b.releaseMultiplierLabel.get(), primary);
 
-    // Solo + mute take the last two columns of the detail row.
-    auto toggleArea = detailArea.removeFromLeft (detailColW * 2 + kColumnPadding);
+    placeSlider (b.attackOffsetSlider.get(),      b.attackOffsetLabel.get(),      detail);
+    placeSlider (b.holdOffsetSlider.get(),        b.holdOffsetLabel.get(),        detail);
+    placeSlider (b.detectorWeightingSlider.get(), b.detectorWeightingLabel.get(), detail);
+
+    const int toggleWidth = (toggleArea.getWidth() - kColumnPadding) / 2;
     if (b.soloButton)
-    {
-        b.soloButton->setBounds (toggleArea.removeFromLeft (detailColW));
-    }
+        b.soloButton->setBounds (toggleArea.removeFromLeft (toggleWidth));
     toggleArea.removeFromLeft (kColumnPadding);
     if (b.muteButton)
-    {
-        b.muteButton->setBounds (toggleArea.removeFromLeft (detailColW));
-    }
+        b.muteButton->setBounds (toggleArea);
 }
 
 //==============================================================================
@@ -359,7 +333,7 @@ void ShapePage::buildBandControls (BandControls& out,
                   ids.thresholdOffset,           "Threshold",
                   out.thresholdOffsetAttachment);
     attachSlider (out.releaseMultiplierSlider,   out.releaseMultiplierLabel,
-                  ids.releaseMultiplier,         "Release ×",
+                  ids.releaseMultiplier,         "Release x",
                   out.releaseMultiplierAttachment);
     attachSlider (out.attackOffsetSlider,        out.attackOffsetLabel,
                   ids.attackOffset,              "Attack",

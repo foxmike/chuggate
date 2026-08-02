@@ -4,7 +4,7 @@
 // §21.3). See MainHeader.h for the public surface and the rationale of
 // the wiring model.
 //
-// Layout (computed in resized(), single horizontal row):
+// Layout (computed in resized(), two horizontal rows):
 //
 //   ┌────────────────────────────────────────────────────────────────────┐
 //   │ [Preset ▾] [Load] [Save] │ [Profile ▾] │ [A][B][Copy][Swap]       │
@@ -12,9 +12,9 @@
 //   │ CPU: 0%                                                              │
 //   └────────────────────────────────────────────────────────────────────┘
 //
-// The header is a single 36 px tall row. At the minimum editor width
-// (~920 px) every control stays visible — the layout uses fixed
-// sub-section widths with a small flex area for the readouts.
+// The header is 56 px tall. At the minimum editor width (~920 px) every
+// control stays visible across two fixed-height rows, with flexible space
+// before the right-aligned controls on the second row.
 
 #include "MainHeader.h"
 
@@ -36,20 +36,20 @@ namespace
     // total row width sums to ~840 px including group gaps, which is
     // well under the 912 px available at 920 px editor width.
     //--------------------------------------------------------------------------
-    constexpr int kHeaderHeight     = 36;
+    constexpr int kHeaderHeight     = 56;
     constexpr int kOuterInset       = 4;
-    constexpr int kGroupGap         = 6;   // gap between logical groups
+    constexpr int kGroupGap         = 4;   // gap between logical groups
     constexpr int kInnerGap         = 2;   // gap inside a group
     constexpr int kControlHeight    = 22;
 
-    constexpr int kLabelWidth       = 30;  // small left labels
-    constexpr int kComboWidth       = 90;  // preset / profile combos
-    constexpr int kSmallBtnWidth    = 32;  // load / save / learn / align
+    constexpr int kLabelWidth       = 24;  // small left labels
+    constexpr int kComboWidth       = 140; // preset / profile combos
+    constexpr int kSmallBtnWidth    = 48;  // load / save / learn / align
     constexpr int kABBtnWidth       = 26;  // A / B buttons
-    constexpr int kABActionWidth    = 32;  // copy / swap
-    constexpr int kBypassWidth      = 50;  // bypass toggle
-    constexpr int kKeySourceWidth   = 90;  // "Key: …" status
-    constexpr int kSidechainWidth   = 60;  // "SC: …" status
+    constexpr int kABActionWidth    = 48;  // copy / swap
+    constexpr int kBypassWidth      = 60;  // bypass toggle
+    constexpr int kKeySourceWidth   = 110; // "Key: …" status
+    constexpr int kSidechainWidth   = 70;  // "SC: …" status
     constexpr int kReadoutWidth     = 56;  // latency / CPU readouts
 
     //--------------------------------------------------------------------------
@@ -282,22 +282,22 @@ MainHeader::MainHeader (juce::AudioProcessorValueTreeState& apvts)
     //--------------------------------------------------------------------------
     // Read-only status labels
     //--------------------------------------------------------------------------
-    keySourceStatusLabel_ = std::make_unique<juce::Label> ("", "Key: —");
+    keySourceStatusLabel_ = std::make_unique<juce::Label> ("", "Key: --");
     keySourceStatusLabel_->setComponentID ("headerStatusLabel");
     keySourceStatusLabel_->setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (*keySourceStatusLabel_);
 
-    sidechainStatusLabel_ = std::make_unique<juce::Label> ("", "SC: —");
+    sidechainStatusLabel_ = std::make_unique<juce::Label> ("", "SC: --");
     sidechainStatusLabel_->setComponentID ("headerStatusLabel");
     sidechainStatusLabel_->setJustificationType (juce::Justification::centredLeft);
     addAndMakeVisible (*sidechainStatusLabel_);
 
-    latencyLabel_ = std::make_unique<juce::Label> ("", "Lat: —");
+    latencyLabel_ = std::make_unique<juce::Label> ("", "Lat: --");
     latencyLabel_->setComponentID ("headerStatusLabel");
     latencyLabel_->setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (*latencyLabel_);
 
-    cpuLabel_ = std::make_unique<juce::Label> ("", "CPU: —");
+    cpuLabel_ = std::make_unique<juce::Label> ("", "CPU: --");
     cpuLabel_->setComponentID ("headerStatusLabel");
     cpuLabel_->setJustificationType (juce::Justification::centredRight);
     addAndMakeVisible (*cpuLabel_);
@@ -346,7 +346,7 @@ void MainHeader::refreshNow() noexcept
         keySourceStatusLabel_->setText ("Key: " + juce::String (kKeySourceLabels[keySourceIndex_]),
                                         juce::dontSendNotification);
     else
-        keySourceStatusLabel_->setText ("Key: —", juce::dontSendNotification);
+    keySourceStatusLabel_->setText ("Key: --", juce::dontSendNotification);
 }
 
 //==============================================================================
@@ -373,43 +373,39 @@ void MainHeader::paint (juce::Graphics& g)
 
 void MainHeader::resized()
 {
-    auto area = getLocalBounds().reduced (kOuterInset, 0);
+    auto area = getLocalBounds().reduced (kOuterInset, 4);
 
-    // Single kControlHeight-tall row; everything shares a horizontal strip.
-    auto row = area.removeFromTop (kControlHeight);
+    auto topRow = area.removeFromTop (kControlHeight);
+    area.removeFromTop (4);
+    auto bottomRow = area.removeFromTop (kControlHeight);
 
-    // 1) Preset group: [label][combo][Load][Save]
+    // 1) Preset group: [combo][Load][Save]
     {
-        const int w = kLabelWidth + kInnerGap + kComboWidth
-                       + kInnerGap + kSmallBtnWidth
+        const int w = kComboWidth + kInnerGap + kSmallBtnWidth
                        + kInnerGap + kSmallBtnWidth;
-        auto group = row.removeFromLeft (w);
-        presetLabel_->setBounds (group.removeFromLeft (kLabelWidth));
-        group.removeFromLeft (kInnerGap);
+        auto group = topRow.removeFromLeft (w);
         presetCombo_->setBounds (group.removeFromLeft (kComboWidth));
         group.removeFromLeft (kInnerGap);
         presetLoadButton_->setBounds (group.removeFromLeft (kSmallBtnWidth));
         group.removeFromLeft (kInnerGap);
         presetSaveButton_->setBounds (group.removeFromLeft (kSmallBtnWidth));
     }
-    row.removeFromLeft (kGroupGap);
+    topRow.removeFromLeft (kInnerGap);
 
-    // 2) Profile group: [label][combo]
+    // 2) Profile group: [combo]
     {
-        const int w = kLabelWidth + kInnerGap + kComboWidth;
-        auto group = row.removeFromLeft (w);
-        profileLabel_->setBounds (group.removeFromLeft (kLabelWidth));
-        group.removeFromLeft (kInnerGap);
+        const int w = kComboWidth;
+        auto group = topRow.removeFromLeft (w);
         profileCombo_->setBounds (group.removeFromLeft (kComboWidth));
     }
-    row.removeFromLeft (kGroupGap);
+    topRow.removeFromLeft (kGroupGap);
 
     // 3) A/B group: [A][B][Copy][Swap]
     {
         const int w = kABBtnWidth + kInnerGap + kABBtnWidth
                        + kInnerGap + kABActionWidth
                        + kInnerGap + kABActionWidth;
-        auto group = row.removeFromLeft (w);
+        auto group = topRow.removeFromLeft (w);
         aButton_->setBounds (group.removeFromLeft (kABBtnWidth));
         group.removeFromLeft (kInnerGap);
         bButton_->setBounds (group.removeFromLeft (kABBtnWidth));
@@ -418,34 +414,25 @@ void MainHeader::resized()
         group.removeFromLeft (kInnerGap);
         swapButton_->setBounds (group.removeFromLeft (kABActionWidth));
     }
-    row.removeFromLeft (kGroupGap);
 
     // 4) Key source status + sidechain indicator
-    keySourceStatusLabel_->setBounds (row.removeFromLeft (kKeySourceWidth));
-    row.removeFromLeft (kInnerGap);
-    sidechainStatusLabel_->setBounds (row.removeFromLeft (kSidechainWidth));
+    keySourceStatusLabel_->setBounds (bottomRow.removeFromLeft (kKeySourceWidth));
+    bottomRow.removeFromLeft (kGroupGap);
+    sidechainStatusLabel_->setBounds (bottomRow.removeFromLeft (kSidechainWidth));
 
-    row.removeFromLeft (kGroupGap);
+    bottomRow.removeFromLeft (kGroupGap);
 
     // 5) Learn / Align shortcut buttons
-    {
-        const int w = kSmallBtnWidth + kInnerGap + kSmallBtnWidth;
-        auto group = row.removeFromLeft (w);
-        learnButton_->setBounds (group.removeFromLeft (kSmallBtnWidth));
-        group.removeFromLeft (kInnerGap);
-        alignButton_->setBounds (group.removeFromLeft (kSmallBtnWidth));
-    }
-    row.removeFromLeft (kGroupGap);
+    learnButton_->setBounds (bottomRow.removeFromLeft (kSmallBtnWidth));
+    bottomRow.removeFromLeft (kGroupGap);
+    alignButton_->setBounds (bottomRow.removeFromLeft (kSmallBtnWidth));
 
-    // 6) Bypass toggle
-    bypassToggle_->setBounds (row.removeFromLeft (kBypassWidth));
-
-    row.removeFromLeft (kGroupGap);
-
-    // 7) Readouts on the right edge (latency + CPU)
-    cpuLabel_->setBounds (row.removeFromRight (kReadoutWidth));
-    row.removeFromRight (kInnerGap);
-    latencyLabel_->setBounds (row.removeFromRight (kReadoutWidth));
+    // 6) Bypass toggle and readouts on the right edge.
+    cpuLabel_->setBounds (bottomRow.removeFromRight (kReadoutWidth));
+    bottomRow.removeFromRight (kGroupGap);
+    latencyLabel_->setBounds (bottomRow.removeFromRight (kReadoutWidth));
+    bottomRow.removeFromRight (kGroupGap);
+    bypassToggle_->setBounds (bottomRow.removeFromRight (kBypassWidth));
 }
 
 //==============================================================================
@@ -472,7 +459,7 @@ void MainHeader::timerCallback()
             keySourceStatusLabel_->setText ("Key: " + juce::String (kKeySourceLabels[keySourceIndex_]),
                                             juce::dontSendNotification);
         else
-            keySourceStatusLabel_->setText ("Key: —", juce::dontSendNotification);
+            keySourceStatusLabel_->setText ("Key: --", juce::dontSendNotification);
     }
 
     const auto endTime = juce::Time::getMillisecondCounterHiRes();
@@ -524,7 +511,7 @@ void MainHeader::refreshLatency() noexcept
         if (lastLatencySamples_ != 0)
         {
             lastLatencySamples_ = 0;
-            latencyLabel_->setText ("Lat: —", juce::dontSendNotification);
+        latencyLabel_->setText ("Lat: --", juce::dontSendNotification);
         }
         return;
     }

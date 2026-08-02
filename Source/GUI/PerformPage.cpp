@@ -34,11 +34,6 @@ namespace ChugGate::GUI {
 
 namespace
 {
-    // Vertical layout weights — primary row, selector row, expert row.
-    constexpr float kPrimaryRowWeight  = 0.50f;
-    constexpr float kSelectorRowWeight = 0.22f;
-    constexpr float kExpertRowWeight   = 0.28f;
-
     // Horizontal padding between adjacent knobs/selectors.
     constexpr int kHorizontalPadding  = 12;
     constexpr int kVerticalPadding    = 8;
@@ -171,10 +166,10 @@ void PerformPage::resized()
     // Skip the title bar.
     area.removeFromTop (16);
 
-    const int totalH = area.getHeight();
-    const int primaryH  = std::max (100, static_cast<int> (totalH * kPrimaryRowWeight));
-    const int selectorH = std::max (60,  static_cast<int> (totalH * kSelectorRowWeight));
-    const int expertH   = std::max (0,   totalH - primaryH - selectorH);
+    constexpr int primaryH  = 160;
+    constexpr int selectorH = 70;
+    const int expertH = juce::jmax (0, area.getHeight() - primaryH - selectorH
+                                       - kVerticalPadding * 2);
 
     layoutPrimaryRow  (area.removeFromTop (primaryH));
     area.removeFromTop (kVerticalPadding);
@@ -199,7 +194,9 @@ void PerformPage::layoutPrimaryRow (juce::Rectangle<int> area)
         auto col = area.removeFromLeft (colW);
         if (! area.isEmpty()) area.removeFromLeft (kHorizontalPadding);
         l->setBounds (col.removeFromTop (kLabelHeight));
-        s->setBounds (col);
+        col.removeFromTop (2);
+        s->setBounds (col.withSizeKeepingCentre (col.getWidth(),
+                                                 juce::jmin (140, col.getHeight())));
     };
 
     placeKnob (thresholdSlider_.get(),   thresholdLabel_.get());
@@ -300,6 +297,7 @@ void PerformPage::makeRotaryWithLabel (std::unique_ptr<juce::Slider>& sliderOut,
 {
     sliderOut = std::make_unique<juce::Slider> (name);
     labelOut  = std::make_unique<juce::Label>  (name, text);
+    labelOut->setColour (juce::Label::backgroundColourId, juce::Colours::transparentBlack);
     labelOut->setJustificationType (juce::Justification::centred);
     labelOut->setInterceptsMouseClicks (false, false);
     addAndMakeVisible (*sliderOut);
@@ -442,7 +440,7 @@ void PerformPage::buildExpertInspector()
         // Attack Guard detail
         { AttackGuard::sensitivity,  "AG Sensitivity"    },
         { AttackGuard::frequency,    "AG Frequency"      },
-        { AttackGuard::maxThresholdReduction, "AG Max Red." },
+        { AttackGuard::maxThreshReduction, "AG Max Red." },
         // Sustain detail
         { Sustain::releaseExtension, "Sustain Ext."      },
         { Sustain::harmonicWeight,   "Sustain Harm."     },

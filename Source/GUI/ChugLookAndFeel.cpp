@@ -475,14 +475,14 @@ void ChugLookAndFeel::drawRotarySlider (juce::Graphics& g,
                                         juce::Slider& slider)
 {
     // Bounds and geometry.
-    const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (2.0f);
+    const auto bounds = juce::Rectangle<int> (x, y, width, height).toFloat().reduced (8.0f);
     const float diameter = juce::jmin (bounds.getWidth(), bounds.getHeight());
     const auto knob    = bounds.withSizeKeepingCentre (diameter, diameter);
     const auto centre  = knob.getCentre();
 
     // Outer track ring (sunken, mechanical).
     juce::Path track;
-    track.addArc (knob.getX(), knob.getY(), knob.getRight(), knob.getBottom(),
+    track.addArc (knob.getX(), knob.getY(), knob.getWidth(), knob.getHeight(),
                   rotaryStartAngle, rotaryEndAngle, true);
 
     g.setColour (juce::Colour (kSunkenPanelColour));
@@ -495,7 +495,7 @@ void ChugLookAndFeel::drawRotarySlider (juce::Graphics& g,
     const float currentAngle = rotaryStartAngle + (rotaryEndAngle - rotaryStartAngle) * clamped;
 
     juce::Path fillArc;
-    fillArc.addArc (knob.getX(), knob.getY(), knob.getRight(), knob.getBottom(),
+    fillArc.addArc (knob.getX(), knob.getY(), knob.getWidth(), knob.getHeight(),
                     rotaryStartAngle, currentAngle, true);
 
     g.setColour (resolveAccentColour (slider.isMouseOverOrDragging(), slider.isEnabled()));
@@ -505,12 +505,12 @@ void ChugLookAndFeel::drawRotarySlider (juce::Graphics& g,
 
     // Thumb — flat indicator, mechanical not glossy.
     const float innerDiameter = diameter * 0.62f;
-    auto thumb = juce::Rectangle<float> (innerDiameter, innerDiameter)
-                     .withCentre (centre);
-    drawSharpRect (g, thumb,
-                   juce::Colour (kRaisedPanelColour),
-                   juce::Colour (kOutlineStrongColour),
-                   1.0f, 2.0f);
+    const auto thumb = juce::Rectangle<float> (innerDiameter, innerDiameter)
+                           .withCentre (centre);
+    g.setColour (juce::Colour (kRaisedPanelColour));
+    g.fillEllipse (thumb);
+    g.setColour (juce::Colour (kOutlineStrongColour));
+    g.drawEllipse (thumb, 1.0f);
 
     // Index notch — a single 2 px mark on the indicator pointing in the
     // direction of motion. Reinforces the fast / precise / mechanical feel.

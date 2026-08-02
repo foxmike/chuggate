@@ -160,7 +160,7 @@ ChugGate::createParameterLayout() {
            0.1f, 40.0f, "ms", 50.0f);
   addFloat(layout, IDs::AttackGuard::softNoteAssist, "Soft Note Assist", 0.0f,
            1.0f, 0.01f, 0.5f);
-  addFloat(layout, IDs::AttackGuard::maxThresholdReduction,
+  addFloat(layout, IDs::AttackGuard::maxThreshReduction,
            "Maximum Threshold Reduction", 0.0f, 36.0f, 0.1f, 12.0f, "dB");
   addFloat(layout, IDs::AttackGuard::confirmationWindow,
            "Attack Confirmation Window", 0.1f, 50.0f, 0.1f, 5.0f, "ms", 5.0f);
@@ -312,7 +312,7 @@ ChugGateAudioProcessor::ChugGateAudioProcessor()
     params.attackGuardFrequency = apvts.getRawParameterValue(ChugGate::ParameterIDs::AttackGuard::frequency);
     params.attackGuardDecay = apvts.getRawParameterValue(ChugGate::ParameterIDs::AttackGuard::decay);
     params.attackGuardSoftNoteAssist = apvts.getRawParameterValue(ChugGate::ParameterIDs::AttackGuard::softNoteAssist);
-    params.attackGuardMaxThresholdReduction = apvts.getRawParameterValue(ChugGate::ParameterIDs::AttackGuard::maxThresholdReduction);
+    params.attackGuardMaxThresholdReduction = apvts.getRawParameterValue(ChugGate::ParameterIDs::AttackGuard::maxThreshReduction);
     params.attackGuardConfirmationWindow = apvts.getRawParameterValue(ChugGate::ParameterIDs::AttackGuard::confirmationWindow);
 
     // Sustain Analyzer parameters
@@ -425,10 +425,15 @@ bool ChugGateAudioProcessor::isBusesLayoutSupported(
     const BusesLayout &layouts) const {
   const auto output = layouts.getMainOutputChannelSet();
   const auto input = layouts.getMainInputChannelSet();
+  const auto sidechain = layouts.inputBuses.size() > 1
+                             ? layouts.getChannelSet(true, 1)
+                             : juce::AudioChannelSet::disabled();
 
   return output == juce::AudioChannelSet::stereo() &&
          (input == juce::AudioChannelSet::mono() ||
-          input == juce::AudioChannelSet::stereo());
+          input == juce::AudioChannelSet::stereo()) &&
+         (sidechain == juce::AudioChannelSet::disabled() ||
+          sidechain == juce::AudioChannelSet::stereo());
 }
 
 void ChugGateAudioProcessor::prepareToPlay(double sampleRate,

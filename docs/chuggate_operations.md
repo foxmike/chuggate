@@ -1,7 +1,10 @@
-# ChugGate — Operations Guide
+# ChugGate — Operations Manual
 
-## Purpose
-ChugGate is a performance-aware adaptive gate, downward expander, and multiband noise controller designed for electric guitar and bass. It is optimized to suppress pickup hum, high-gain amp hiss, and cabinet resonance tails while preserving note attacks, fast alternate-picked chugs, and singing lead sustain. The plugin utilizes a flexible sidechain key path to allow a clean DI signal to drive the gating of noisy post-amplifier channels.
+## Plugin Overview
+ChugGate is a performance-aware adaptive gate, downward expander, and multiband noise controller designed for electric guitar and bass. It is optimized to suppress pickup hum, high-gain amp hiss, and cabinet resonance tails while preserving note attacks, fast alternate-picked chugs, and singing lead sustain.
+
+## Intended Use
+The plugin is intended to be inserted on high-gain guitar or bass tracks (pre- or post-amplifier sim) or buses. It utilizes a flexible sidechain key path to allow a clean DI signal to drive the gating of noisy post-amplifier channels.
 
 ## Signal Flow
 The internal audio signal path runs from input to output through the following sequential stages:
@@ -26,10 +29,7 @@ The internal audio signal path runs from input to output through the following s
 7. **Stereo Link Matrix (`stereo.linkMode`)**: Links gain reduction between left and right channels.
 8. **Output Trim (`global.outputTrim`)**: Applies master output level adjustment.
 
----
-
-## Controls Reference
-
+## Controls and Parameters
 Exposed parameters registered with the APVTS:
 
 ### Performance Tab
@@ -120,23 +120,28 @@ Exposed parameters registered with the APVTS:
 - **Audition State Filter (`audition.stateFilterMode`)**: choice, Off (0) to Closed (4), default Off.
 - **Low/Mid/High Band parameters**: Each band exposes: `Floor` (-80.0 to 0.0 dB), `Threshold Offset` (-24.0 to +24.0 dB), `Attack Offset` (-50.0 to +50.0 ms), `Hold Offset` (-1000.0 to +1000.0 ms), `Release Multiplier` (0.1 to 4.0x), `Solo` (bool), `Mute` (bool), and `Detector Weighting` (0.0 to 1.0).
 
----
+## Stereo and Mono Behavior
+Stereo link matrix behavior is determined by `stereo.linkMode` and `stereo.linkAmount`. Modes include Max, Energy, Average, and DualMono, allowing customization of dynamic attenuation sharing between Left and Right channels.
 
-## Metering and Visualization
+## Latency and Lookahead
+- The default lookahead mode is Off (`0` samples of reported latency).
+- Selecting a lookahead value (0.25 ms, 0.5 ms, 1 ms, 2 ms, 5 ms, 10 ms) activates the internal lookahead delay buffer and correctly reports the latency to the host via `setLatencySamples()`.
+
+## Bypass Behavior
+Controlled via the `global.bypass` boolean parameter. When enabled, audio processing is bypassed, passing the input signal transparently to the output.
+
+## Presets and State Recall
+The plugin features program-based A/B memory state registers (`ab.state`) and separate factory and user preset workflows.
+
+- Six factory presets are supplied as JSON resources: `Bass_ActiveNoiseControl`, `DIKeyed_Rhythm`, `Diag_LearnMyRig`, `Lead_SingingSustain`, `PostAmp_HissSuppression`, and `Rhythm_ModernTight`. Select one in the Factory Preset control and use **Load Preset** to apply it.
+- To save the current settings as a user preset, use **Save** in the header preset control. If a preset name is selected, that name is used; otherwise the default name is `User Preset`. Select a saved user preset and use **Load** to recall it.
+- User presets are stored as XML below the operating system's user application-data directory at `ChugGate/Presets/`. The directory is created when the first user preset is saved.
+- Factory and user preset recall updates the complete plugin state. The host session also preserves the current state through normal plugin state serialization.
+
+## Metering and Visual Feedback
 - **State Indicator (`StateIndicator`)**: Renders a vertical colored state column representing the active state machine status: OPEN (green), HOLD (yellow), SUSTAIN (blue), RELEASE (purple), or CLOSED (red).
 - **Performance Timeline (`PerformanceTimeline`)**: Scrolling GUI trace displaying the sidechain key envelope, gain attenuation curves across bands, and onset ticks over a time history.
 - **Level Meters**: Traditional input, output, and sidechain level indicators.
 
-## Preset System
-The plugin features program-based A/B memory state registers. While the state engine is designed to search the `/home/mike/dev/mike/music/plugins/chuggate/Resources/Presets` directory for `.xml` preset profiles, the directory does not exist in this repository, meaning no factory presets are available out-of-the-box. Custom user presets can be saved to the OS AppData folder under `ChugGate/Presets/`.
-
-## Latency
-- The default lookahead mode is Off (`0` samples of reported latency).
-- Selecting a lookahead value (0.25 ms, 0.5 ms, 1 ms, 2 ms, 5 ms, 10 ms) activates the internal lookahead delay buffer and correctly reports the latency to the host via `setLatencySamples()`.
-
 ## Supported Formats
 - VST3, Standalone.
-
-## Known Limitations
-- **Missing Factory Presets Folder**: The `/home/mike/dev/mike/music/plugins/chuggate/Resources/Presets/` folder is missing in the workspace directory, so `StateManager` will not load any default factory presets.
-- **CLAP and LV2 Deferred**: These formats are listed in the specification roadmap but are not configured in the CMake build pipeline.

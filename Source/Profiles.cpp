@@ -90,7 +90,7 @@ std::vector<Override> overridesFor(ProfileIndex p) {
         {ID::AttackGuard::enabled, 1.0f},
         {ID::AttackGuard::amount, 0.85f},
         {ID::AttackGuard::sensitivity, 0.6f},
-        {ID::AttackGuard::maxThresholdReduction, 15.0f},
+        {ID::AttackGuard::maxThreshReduction, 15.0f},
         {ID::Cadence::enabled, 1.0f},
         {ID::Cadence::amount, 0.6f},
         {ID::Sustain::enabled, 1.0f},

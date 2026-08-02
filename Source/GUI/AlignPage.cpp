@@ -349,7 +349,7 @@ void AlignPage::paintEmptyState (juce::Graphics& g, juce::Rectangle<int> area)
 {
     g.setColour (ChugLookAndFeel::getMutedTextColour());
     g.setFont (juce::FontOptions (11.0f));
-    g.drawText ("No alignment data — press Calibrate/Align to capture onsets",
+    g.drawText ("No alignment data -- press Calibrate/Align to capture onsets",
                 area, juce::Justification::centred, true);
 }
 
@@ -712,7 +712,7 @@ void AlignPage::buildControls()
     acceptButton_->setComponentID    ("alignAcceptButton");
     retryButton_->setComponentID     ("alignRetryButton");
 
-    calibrateButton_->setTooltip    ("Start the DI alignment calibration capture (spec §13.5)");
+    calibrateButton_->setTooltip    ("Start the DI alignment calibration capture (spec section 13.5)");
     acceptButton_->setTooltip       ("Apply the captured offset to key.alignmentOffset");
     retryButton_->setTooltip        ("Discard the captured offset and try again");
 
@@ -744,7 +744,7 @@ void AlignPage::buildControls()
     // Lookahead readout combo (bound to global.lookahead).
     lookaheadCombo_ = std::make_unique<juce::ComboBox> ("lookaheadCombo");
     lookaheadCombo_->setComponentID ("alignLookahead");
-    lookaheadCombo_->setTooltip ("Main-path lookahead (spec §17)");
+    lookaheadCombo_->setTooltip ("Main-path lookahead (spec section 17)");
     addAndMakeVisible (*lookaheadCombo_);
 
     lookaheadLabel_ = std::make_unique<juce::Label> ("lookaheadLabel", "Lookahead");

@@ -748,11 +748,11 @@ void DetectPage::buildAttackGuardGroup()
 
     makeRotaryWithLabel (attackGuardMaxReductionSlider_, attackGuardMaxReductionLabel_,
                          "attackGuardMaxRed", "Max Red.", panel);
-    if (apvts_.getParameter (AttackGuard::maxThresholdReduction) != nullptr)
+    if (apvts_.getParameter (AttackGuard::maxThreshReduction) != nullptr)
     {
         attackGuardMaxReductionAttachment_ =
             std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment> (
-                apvts_, AttackGuard::maxThresholdReduction, *attackGuardMaxReductionSlider_);
+                apvts_, AttackGuard::maxThreshReduction, *attackGuardMaxReductionSlider_);
     }
 
     makeRotaryWithLabel (attackGuardConfirmationSlider_, attackGuardConfirmationLabel_,

@@ -78,9 +78,9 @@ namespace
     constexpr float kModeWeight       = 0.16f;
 
     constexpr int kNoiseMinH          = 180;
-    constexpr int kAuditionMinH       = 56;
-    constexpr int kIntegrityMinH      = 80;
-    constexpr int kModeMinH           = 48;
+    constexpr int kAuditionMinH       = 80;
+    constexpr int kIntegrityMinH      = 100;
+    constexpr int kModeMinH           = 60;
 
     constexpr int kInitialNumBins     = 128;
 
@@ -153,7 +153,7 @@ DiagnosePage::DiagnosePage()
     // Rejected-signal mode combo (bound to audition.rejectedMode).
     rejectedModeCombo_ = std::make_unique<juce::ComboBox> ("rejectedModeCombo");
     rejectedModeCombo_->setComponentID ("diagnoseRejectedMode");
-    rejectedModeCombo_->setTooltip ("Which rejected signal to audition (spec §20.5)");
+    rejectedModeCombo_->setTooltip ("Which rejected signal to audition (spec sec. 20.5)");
     addAndMakeVisible (*rejectedModeCombo_);
 
     rejectedModeLabel_ = std::make_unique<juce::Label> ("rejectedModeLabel",
@@ -170,7 +170,7 @@ DiagnosePage::DiagnosePage()
     // State-filter mode combo (bound to audition.stateFilterMode).
     stateFilterCombo_ = std::make_unique<juce::ComboBox> ("stateFilterCombo");
     stateFilterCombo_->setComponentID ("diagnoseStateFilter");
-    stateFilterCombo_->setTooltip ("Trigger audition only during this state (spec §20.5)");
+    stateFilterCombo_->setTooltip ("Trigger audition only during this state (spec sec. 20.5)");
     addAndMakeVisible (*stateFilterCombo_);
 
     stateFilterLabel_ = std::make_unique<juce::Label> ("stateFilterLabel",
@@ -187,7 +187,7 @@ DiagnosePage::DiagnosePage()
     analyzerModeCombo_->addItem ("Studio",   3);
     analyzerModeCombo_->addItem ("Diagnose", 4);
     analyzerModeCombo_->setSelectedId (3, juce::dontSendNotification); // default = Diagnose
-    analyzerModeCombo_->setTooltip ("Analyzer layer preset (spec §20.6)");
+    analyzerModeCombo_->setTooltip ("Analyzer layer preset (spec sec. 20.6)");
     addAndMakeVisible (*analyzerModeCombo_);
 
     analyzerModeLabel_ = std::make_unique<juce::Label> ("analyzerModeLabel",
@@ -415,7 +415,7 @@ void DiagnosePage::paint (juce::Graphics& g)
 
     // Page title.
     g.setColour (ChugLookAndFeel::getMutedTextColour());
-    g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     g.drawText ("DIAGNOSE", bounds.removeFromTop (16), juce::Justification::centredLeft);
 
     // Group backgrounds.
@@ -443,7 +443,7 @@ void DiagnosePage::paint (juce::Graphics& g)
         {
             auto inner = auditionGroup_.panel->getBounds()
                              .reduced (kGroupInnerInset, kGroupInnerInset + kGroupTitleHeight / 2);
-            paintEmptySection (g, inner, "Audition controls — wire APVTS to bind");
+            paintEmptySection (g, inner, "Audition controls -- wire APVTS to bind");
         }
     }
 
@@ -475,7 +475,7 @@ void DiagnosePage::paintGroupBackground (juce::Graphics& g,
     g.drawRoundedRectangle (bounds, 3.0f, 1.0f);
 
     g.setColour (ChugLookAndFeel::getTextColour());
-    g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     auto titleBounds = juce::Rectangle<int> (panel->getX() + kGroupInnerInset,
                                              panel->getY() + 2,
                                              panel->getWidth() - kGroupInnerInset * 2,
@@ -487,7 +487,7 @@ void DiagnosePage::paintEmptySection (juce::Graphics& g, juce::Rectangle<int> ar
                                       const juce::String& message)
 {
     g.setColour (ChugLookAndFeel::getMutedTextColour());
-    g.setFont (juce::FontOptions (10.5f));
+    g.setFont (juce::FontOptions (13.0f));
     g.drawText (message, area, juce::Justification::centred, true);
 }
 
@@ -654,7 +654,8 @@ void DiagnosePage::paintNoiseSection (juce::Graphics& g, juce::Rectangle<int> ar
 
     auto flagText = [] (bool on, const juce::String& name)
     {
-        return (on ? juce::String ("\u25CF ") : juce::String ("\u25CB ")) + name;
+        return (on ? juce::String::fromUTF8 ("\xE2\x97\x8F ")
+                   : juce::String::fromUTF8 ("\xE2\x97\x8B ")) + name;
     };
 
     auto drawFlag = [&] (int idx, const juce::String& text, juce::Colour c)
@@ -684,11 +685,11 @@ void DiagnosePage::paintAttackReadouts (juce::Graphics& g, juce::Rectangle<int> 
     if (area.isEmpty()) return;
 
     g.setColour (ChugLookAndFeel::getTextColour());
-    g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     auto titleArea = area.removeFromTop (16);
     g.drawText ("Attack integrity", titleArea, juce::Justification::centredLeft, true);
 
-    g.setFont (juce::FontOptions (10.0f));
+    g.setFont (juce::FontOptions (13.0f));
     auto write = [&] (int row, const juce::String& left, const juce::String& right)
     {
         const int lineH = std::max (14, area.getHeight() / 4);
@@ -732,11 +733,11 @@ void DiagnosePage::paintTailReadouts (juce::Graphics& g, juce::Rectangle<int> ar
     if (area.isEmpty()) return;
 
     g.setColour (ChugLookAndFeel::getTextColour());
-    g.setFont (juce::FontOptions (10.0f, juce::Font::bold));
+    g.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     auto titleArea = area.removeFromTop (16);
     g.drawText ("Tail integrity", titleArea, juce::Justification::centredLeft, true);
 
-    g.setFont (juce::FontOptions (10.0f));
+    g.setFont (juce::FontOptions (13.0f));
     auto write = [&] (int row, const juce::String& left, const juce::String& right)
     {
         const int lineH = std::max (14, area.getHeight() / 2);
@@ -814,8 +815,8 @@ void DiagnosePage::layoutAuditionRow (juce::Rectangle<int> area)
     if (auditionGroup_.panel) auditionGroup_.panel->setBounds (area);
 
     // Inner area: two combos side-by-side, each with its label above.
-    auto inner = area.reduced (kGroupInnerInset,
-                               kGroupTitleHeight + kGroupInnerInset);
+    auto inner = area.reduced (kGroupInnerInset);
+    inner.removeFromTop (kGroupTitleHeight);
     if (inner.isEmpty()) return;
 
     const int halfW = inner.getWidth() / 2;
@@ -829,12 +830,12 @@ void DiagnosePage::layoutAuditionRow (juce::Rectangle<int> area)
     if (rejectedModeLabel_)
         rejectedModeLabel_->setBounds (left.removeFromTop (labelH));
     if (rejectedModeCombo_)
-        rejectedModeCombo_->setBounds (left);
+        rejectedModeCombo_->setBounds (left.withHeight (juce::jmax (28, left.getHeight())));
 
     if (stateFilterLabel_)
         stateFilterLabel_->setBounds (right.removeFromTop (labelH));
     if (stateFilterCombo_)
-        stateFilterCombo_->setBounds (right);
+        stateFilterCombo_->setBounds (right.withHeight (juce::jmax (28, right.getHeight())));
 }
 
 void DiagnosePage::layoutIntegrityRow (juce::Rectangle<int> area)

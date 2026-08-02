@@ -182,7 +182,7 @@ void StateIndicator::paint (juce::Graphics& g)
     header << abbrev << "  " << stateName;
     if (snapshot_.reasonText.isNotEmpty())
     {
-        header << "  —  " << snapshot_.reasonText;
+        header << "  --  " << snapshot_.reasonText;
     }
     if (duration.isNotEmpty())
     {
@@ -215,7 +215,7 @@ void StateIndicator::paint (juce::Graphics& g)
     const auto protLabel = buildProtectionLabel();
     if (protLabel.isNotEmpty())
     {
-        meta << "   •   " << protLabel;
+        meta << "   *   " << protLabel;
     }
 
     g.setColour (ChugLookAndFeel::getMutedTextColour());
@@ -265,7 +265,7 @@ juce::String StateIndicator::buildProtectionLabel() const noexcept
         const auto name = protectionName (bit);
         if (name.isEmpty())
             continue;
-        if (! first) out << " • ";
+        if (! first) out << " * ";
         out << name;
         first = false;
     }
